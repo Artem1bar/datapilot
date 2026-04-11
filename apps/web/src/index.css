@@ -1,0 +1,159 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,100..1000;1,9..40,100..1000&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* ── Brand — LSU Purple #461D7C ──────────────────────────────── */
+    --brand-950: #130724;
+    --brand-900: #1f0c38;
+    --brand-700: #3b1869;
+    --brand-600: #461D7C;
+    --brand-500: #5c2d96;
+    --brand-400: #7c4db8;
+    --brand-300: #a478d4;
+    --brand-100: #e4d5f5;
+    --brand-50: #f3ecfb;
+
+    /* ── Gold — LSU Gold #FDD023 ──────────────────────────────────── */
+    --gold-700: #a37d00;
+    --gold-600: #cc9f00;
+    --gold-500: #FDD023;
+    --gold-400: #ffe566;
+    --gold-100: #fffbd4;
+    --gold-50: #fffef0;
+
+    /* ── Semantic ──────────────────────────────────────────────────── */
+    --teal-700: #0f766e;
+    --teal-600: #0d9488;
+    --teal-100: #ccfbf1;
+    --teal-50: #f0fdfa;
+
+    --amber-700: #a16207;
+    --amber-600: #d97706;
+    --amber-100: #fef3c7;
+    --amber-50: #fffbeb;
+
+    --coral-700: #b91c1c;
+    --coral-600: #dc2626;
+    --coral-100: #fee2e2;
+    --coral-50: #fef2f2;
+
+    /* ── Ink & Surface ────────────────────────────────────────────── */
+    --ink: #0f172a;
+    --ink-secondary: #475569;
+    --ink-tertiary: #64748b;
+    --ink-muted: #94a3b8;
+
+    --surface-canvas: #f8fafc;
+    --surface-primary: #ffffff;
+    --surface-raised: #f1f5f9;
+    --surface-inset: #e2e8f0;
+
+    --line: rgba(15, 23, 42, 0.08);
+    --line-strong: rgba(15, 23, 42, 0.14);
+
+    /* ── shadcn tokens ────────────────────────────────────────────── */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 270 61% 30%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 270 61% 30%;
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --brand-950: #f3ecfb;
+    --brand-900: #e4d5f5;
+    --brand-700: #b88fd9;
+    --brand-600: #9562c4;
+    --brand-500: #9562c4;
+    --brand-400: #7c4db8;
+    --brand-300: #5c2d96;
+    --brand-100: #1f0c38;
+    --brand-50: #1a0a30;
+
+    --gold-700: #ffe566;
+    --gold-600: #FDD023;
+    --gold-500: #cc9f00;
+    --gold-400: #a37d00;
+    --gold-100: #2a2000;
+    --gold-50: #1a1400;
+
+    --teal-700: #5eead4;
+    --teal-600: #2dd4bf;
+    --teal-100: #042f2e;
+    --teal-50: #021a19;
+
+    --amber-700: #fbbf24;
+    --amber-600: #f59e0b;
+    --amber-100: #451a03;
+    --amber-50: #2a1000;
+
+    --coral-700: #fca5a5;
+    --coral-600: #f87171;
+    --coral-100: #450a0a;
+    --coral-50: #2a0505;
+
+    --ink: #f1f5f9;
+    --ink-secondary: #cbd5e1;
+    --ink-tertiary: #94a3b8;
+    --ink-muted: #64748b;
+
+    --surface-canvas: #0c111b;
+    --surface-primary: #131926;
+    --surface-raised: #1a2236;
+    --surface-inset: #0a0e17;
+
+    --line: rgba(241, 245, 249, 0.08);
+    --line-strong: rgba(241, 245, 249, 0.14);
+
+    --background: 222 47% 8%;
+    --foreground: 210 40% 97%;
+
+    --card: 222 32% 11%;
+    --card-foreground: 210 40% 97%;
+    --popover: 222 32% 11%;
+    --popover-foreground: 210 40% 97%;
+    --primary: 275 47% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 222 32% 16%;
+    --secondary-foreground: 210 40% 97%;
+    --muted: 222 32% 16%;
+    --muted-foreground: 215 16% 57%;
+    --accent: 222 32% 16%;
+    --accent-foreground: 210 40% 97%;
+    --destructive: 0 63% 31%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 222 32% 18%;
+    --input: 222 32% 18%;
+    --ring: 275 47% 58%;
+  }
+
+  * {
+    @apply border-[var(--line)];
+  }
+
+  body {
+    @apply bg-[var(--surface-canvas)] text-[var(--ink)] font-sans antialiased;
+    margin: 0;
+  }
+}

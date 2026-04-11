@@ -1,0 +1,201 @@
+id,date,region,product,channel,score,revenue,satisfaction,comments
+93,none,Calif.,Widget A,Phone,,4655.84,Very Satisfied,Comment for order 93
+113,"Apr 25, 2024", FL ,Service Y,In-Store,N/A,"$2,511.98",Neutral,
+128,"Jun 20, 2024",New York,Service X,Social Media,8,$3751.29,Very Dissatisfied,Comment for order 128
+167,"Dec 27, 2023",TX,Service Y,Online,8,"$4,317.89",Satisfied,
+45,28-11-2023,CA,Widget B,Phone,10,,Dissatisfied,
+97,28-07-2023,ca,Service X,Online,6,$130.40,Neutral,
+131,01-12-2024,TX,  Basic Plan ,Online,4,274.18,Very Satisfied,Comment for order 131
+99,09/16/24,Calif.,Service X,Phone,5,$3915.17,Dissatisfied,Comment for order 99
+47,2024-05-19,illinois,Service X,In-Store,,,Very Dissatisfied,
+73,07/20/24, FL ,Basic Plan,Social Media,two,$616.35,Satisfied,Comment for order 73
+69,"Feb 22, 2024",IL,Bundle Pro,Social Media,one,"$1,255.67",Satisfied,Comment for order 69
+95,2024-04-10,Calif.,Widget A,Referral,7,"$3,132.91",Very Satisfied,Comment for order 95
+15,14-03-2023,Florida,Service Y,Referral,,$864.95,Very Dissatisfied,Comment for order 15
+163,"Aug 20, 2024",TX,Widget B,In-Store,3,"$1,230.93",Dissatisfied,Comment for order 163
+80,2023-04-13,Calif.,Service X,Online,,3848.38,Dissatisfied,
+53,2024-11-15,new york,  Service Y ,Social Media,9,,Satisfied,Comment for order 53
+30,"Jul 8, 2024",CA,Bundle Pro,Social Media,7,$4030.34,Very Satisfied,Comment for order 30
+90,2023-09-25,Texas,Bundle Pro,In-Store,10,$853.12,Very Satisfied,Comment for order 90
+66,10/18/23,IL,Service X,Online,2,$2348.12,Very Satisfied,Comment for order 66
+86,"Aug 26, 2023",Tex.,Service X,Online,9,$356.27,Satisfied,
+87,"Sep 17, 2024",texas,  Bundle Pro , Phone,5,$3883.60,Very Satisfied,Comment for order 87
+44,12/19/24,Calif.,Basic Plan, Phone,5,$938.24,Very Satisfied,Comment for order 44
+85,2023-06-17,Tex.,Widget A,Online,8,1875.25,Very Dissatisfied,Comment for order 85
+163,"Aug 20, 2024",TX,Widget B,In-Store,3,"$1,230.93",Dissatisfied,Comment for order 163
+27,2024-11-28,texas,Widget B,Referral,7,$3501.18,Satisfied,Comment for order 27
+107,2024-07-27,new york,Widget B,Social Media,2,3416.54,Satisfied,Comment for order 107
+65,2024-09-12,FL,Basic Plan,Social Media,5,$2301.19,Neutral,
+97,28-07-2023,ca,Service X,Online,6,$130.40,Neutral,
+1,01/24/23,New York,Widget A, Online,three,$3399.66,Satisfied,
+111,16-07-2024,new york,Basic Plan,Phone,10,4314.35,Satisfied,Comment for order 111
+144,01/01/24,Illinois,  Widget B ,Online,1,3504.4,Satisfied,
+171,03-12-2023,TX,Service Y,Phone,9,"$4,842.24",Very Dissatisfied,
+21,11/14/23,CA,Widget B,Social Media,six,3203.71,Very Dissatisfied,N/A
+33,"Jul 2, 2024", FL ,Service Y,Phone,,$146.68,Dissatisfied,Comment for order 33
+39,18-06-2023,TX,  Service Y ,Phone,9,112.63,Dissatisfied,Comment for order 39
+89,2024-03-22,florida,Service X,Referral,1,$942.30,Satisfied,
+117,11-10-2024,Illinois,Widget A,Social Media,N/A,$1873.37,Very Satisfied,Comment for order 117
+176,2024-04-03,NY,Service X,In-Store,ten,1790.1,Very Satisfied,
+143,"Jul 5, 2023",Calif.,Bundle Pro,Social Media,1,"$2,307.25",Dissatisfied,
+50,02-10-2023,texas,Bundle Pro,Phone,1,$4811.46,Satisfied,Comment for order 50
+53,2024-11-15,new york,  Service Y ,Social Media,9,,Satisfied,Comment for order 53
+159,08/04/23,FL,Service X,In-Store,N/A,3664.25,Neutral,Comment for order 159
+139,"May 1, 2024",NY,Widget B,In-Store,,$3493.35,Neutral,Comment for order 139
+165,22-07-2024, FL ,  Service X ,In-Store,8,"$2,848.72",Satisfied,Comment for order 165
+94,03/02/23,Florida,Widget A,In-Store,8,$75.99,Very Dissatisfied,Comment for order 94
+59,2023-01-11,texas,Bundle Pro,In-Store,6,1258.78,Very Satisfied,Comment for order 59
+115,09/15/24,illinois,Service X,Phone,10,4876.66,Neutral,Comment for order 115
+148,11/18/24,Florida,Widget A,Online,2,"$4,872.90",Very Dissatisfied,Comment for order 148
+91,08/20/23,Florida,Widget B,Social Media,9,4829.7,Dissatisfied,Comment for order 91
+169,2024-09-22,N.Y.,Basic Plan,In-Store,-,"$4,341.89",Neutral,Comment for order 169
+121,06/18/24,TX,Service X,In-Store,10,none,Neutral,Comment for order 121
+89,2024-03-22,florida,Service X,Referral,1,$942.30,Satisfied,
+7,2023-09-16,CA,  Bundle Pro ,Referral,3,3970.79,Dissatisfied,Comment for order 7
+141,09-01-2023,Texas,Service Y,Phone,4,"$1,930.21",Dissatisfied,Comment for order 141
+169,2024-09-22,N.Y.,Basic Plan,In-Store,-,"$4,341.89",Neutral,Comment for order 169
+27,2024-11-28,texas,Widget B,Referral,7,$3501.18,Satisfied,Comment for order 27
+145,26-05-2024,california,Widget B,Online,7,$1253.88,Very Satisfied,
+19,"Jun 3, 2023",texas,Bundle Pro, Social Media,3,2738.93,Very Dissatisfied,
+42,"Sep 25, 2024", FL ,Service Y,Phone,eight,$510.61,Neutral,Comment for order 42
+135,01/05/23,new york,Widget B,In-Store,10,3379.03,Very Dissatisfied,
+62,2024-05-01,illinois,Bundle Pro,In-Store,N/A,"$4,519.53",Very Dissatisfied,
+63,2023-11-04,Tex.,Service X,Referral,1,"$3,675.18",Satisfied,Comment for order 63
+156,"Nov 10, 2023",Texas,Service Y,Social Media,seven,$416.13,Dissatisfied,Comment for order 156
+5,15-03-2023,Texas,Widget A,Referral,N/A,"$3,891.20",Satisfied,Comment for order 5
+161,26-04-2024,New York,Service Y, Referral,7,"$3,700.07",Satisfied,
+177,12/01/24,New York,Service Y,In-Store,7,$320.12,Very Dissatisfied,
+142,08/06/24,New York,Basic Plan, Social Media,9,$4588.65,Very Satisfied,Comment for order 142
+36,2024-05-27,N/A,  Basic Plan ,Online,9,"$4,762.00",Satisfied,
+133,"Sep 5, 2024",CA,Bundle Pro,In-Store,5,3609.52,Neutral,
+155,"Jun 4, 2024",illinois,Service Y,In-Store,3,-,Neutral,Comment for order 155
+46,03/05/23,Calif.,Bundle Pro,Social Media,2,$2110.06,Dissatisfied,
+125,28-03-2024,Texas,Service X,Online,2,$3669.04,Neutral,Comment for order 125
+55,09-02-2023,texas,Bundle Pro,Referral,1,$1527.85,Dissatisfied,Comment for order 55
+49,2024-03-03,new york,  Service Y ,Phone,ten,2867.57,Neutral,Comment for order 49
+124,"Mar 14, 2023",ca,  Widget A ,Social Media,8,3757.57,Neutral,
+132,"Jul 6, 2024",florida,  Service Y ,Social Media,7,4589.72,Neutral,
+51,19-03-2024,FL,Widget A,Phone,8,$1699.88,Dissatisfied,
+136,"Sep 19, 2023", FL ,Service Y,Phone,-,$4710.85,Dissatisfied,
+74,27-06-2024, FL ,Service X, Referral,2,1596.99,Very Satisfied,none
+185,06/07/23,Illinois,Widget B,Social Media,10,1872.95,Satisfied,
+7,2023-09-16,CA,  Bundle Pro ,Referral,3,3970.79,Dissatisfied,Comment for order 7
+114,2024-05-18,ca,  Service X ,Online,,3651.16,Satisfied,Comment for order 114
+6,21-04-2024, FL ,Bundle Pro,Social Media,3,$1270.81,Very Dissatisfied,Comment for order 6
+109,"Sep 21, 2023",illinois,Service X, Social Media,3,$3141.17,Very Satisfied,
+154,"May 11, 2023",florida,Basic Plan,Referral,-,4845.19,Satisfied,Comment for order 154
+3,06/20/24,ca,Bundle Pro,Social Media,9,"$4,615.36",Neutral,Comment for order 3
+104,05/25/23,Florida,  Widget B ,Online,10,4586.57,Dissatisfied,Comment for order 104
+57,28-02-2024, California,  Widget B ,Phone,8,$763.57,Dissatisfied,Comment for order 57
+98,06-11-2024,Florida,Widget A,Online,3,3892.14,Very Satisfied,Comment for order 98
+174,08-10-2023,CA,  Basic Plan ,Online,N/A,4941.37,Very Satisfied,Comment for order 174
+9,"Nov 17, 2024",new york,Widget A, Referral,3,$3904.20,Neutral,Comment for order 9
+3,06/20/24,ca,Bundle Pro,Social Media,9,"$4,615.36",Neutral,Comment for order 3
+10,"Apr 2, 2024",IL,  Widget B ,Referral,two,$4089.32,Satisfied,
+127,2024-05-19,texas,Widget B,Social Media,4,635.21,Neutral,Comment for order 127
+76,"Nov 16, 2023",california,Widget B,Social Media,9,$3824.90,Very Dissatisfied,Comment for order 76
+173,02/21/24,TX,Service Y,In-Store,6,,Very Satisfied,Comment for order 173
+137,"Apr 28, 2024",Texas,Bundle Pro,Referral,,none,Satisfied,Comment for order 137
+83,2023-09-21,illinois,Basic Plan,In-Store,,$1779.41,Neutral,
+151,2024-02-01,TX,Widget A,Referral,10,1655.93,Very Dissatisfied,Comment for order 151
+88,"Dec 28, 2024",TX,Basic Plan,Referral,10,4587.89,Very Satisfied,Comment for order 88
+48,"May 2, 2024",texas,Basic Plan,In-Store,8,1205.45,Very Dissatisfied,
+123,"Feb 22, 2024", California,Service Y,Phone,3,4678.41,N/A,Comment for order 123
+26,2024-07-20,Florida,Bundle Pro,In-Store,5,$2208.48,Very Satisfied,Comment for order 26
+17,"Nov 28, 2023",FL,Widget A,Social Media,10,$2992.87,Neutral,Comment for order 17
+29,"Feb 27, 2024",Texas,Bundle Pro,Online,4,278.76,Very Dissatisfied,
+100,06-06-2024,florida,Widget A,In-Store,9,458.93,Neutral,
+8,2023-11-24,Illinois,Widget A,Phone,6,2202.09,Satisfied,Comment for order 8
+2,21-12-2023,N.Y.,Basic Plan,Phone,10,"$4,353.04",Neutral,
+175,"Jun 10, 2024",Florida,Basic Plan,Phone,3,$2838.29,Satisfied,Comment for order 175
+18,09-04-2024,new york,Widget A,Social Media,8,"$3,771.73",Very Satisfied,Comment for order 18
+182,08/15/23,ca,Bundle Pro,Online,10,$828.68,Very Dissatisfied,
+103,12-06-2024, California,Service X, Online,3,$2020.27,Satisfied,Comment for order 103
+14,18-04-2023,N.Y.,Service Y, Social Media,3,"$1,286.54",Very Dissatisfied,Comment for order 14
+162,"Oct 4, 2023",texas,Bundle Pro,Phone,4,1348.65,Very Dissatisfied,Comment for order 162
+129,2023-11-25,Illinois,  Widget A ,Social Media,nine,$436.61,Satisfied,Comment for order 129
+32,02/23/24,new york,Widget B,In-Store,6,"$2,723.75",Very Satisfied,Comment for order 32
+71,2023-12-14,ca,Service Y, Social Media,eight,"$2,590.53",Very Dissatisfied,Comment for order 71
+60,"Aug 19, 2023",N.Y.,Service X, In-Store,5,3350.86,Neutral,Comment for order 60
+1,01/24/23,New York,Widget A, Online,three,$3399.66,Satisfied,
+58,21-06-2024,IL,Widget B,Referral,10,3174.25,Very Satisfied,Comment for order 58
+110,N/A,illinois,Basic Plan,Referral,1,3154.46,Dissatisfied,
+160,06/03/24,CA,Widget B,In-Store,N/A,$3257.45,Very Dissatisfied,
+122,04/07/24,illinois,Widget B,Social Media,5,$3097.60,Satisfied,
+4,11/08/23,Calif.,Widget B,In-Store,2,2294.38,Very Satisfied,Comment for order 4
+23,"Oct 24, 2024",New York,Service X,Referral,,$172.69,Satisfied,
+158,"Feb 9, 2023",illinois,Service Y,Referral,9,"$3,453.94",Very Dissatisfied,Comment for order 158
+172,2024-11-25,CA,Service Y,Referral,8,"$4,650.69",Satisfied,Comment for order 172
+77,10/22/23,Calif.,  Service X ,In-Store,five,1579.47,Dissatisfied,
+13,2024-07-07,ca,Widget A, Online,6,$2361.77,Neutral,Comment for order 13
+102,"Sep 26, 2024",Calif.,Widget A,Phone,10,"$2,218.96",Very Dissatisfied,
+147,2024-05-02,TX,  Bundle Pro ,Referral,,"$1,606.70",Neutral,
+64,09/17/24,new york,Widget A,Online,-,1510.95,Satisfied,Comment for order 64
+140,05/09/24,Illinois,Service X,Phone,8,4907.53,Very Satisfied,Comment for order 140
+38,19-05-2023,Florida,Widget A,Phone,2,"$4,161.33",Very Dissatisfied,Comment for order 38
+166,2024-09-17,IL,Bundle Pro,Online,five,4125.25,Dissatisfied,Comment for order 166
+56,"Aug 11, 2024",N.Y.,Basic Plan,Referral,N/A,2083.34,,Comment for order 56
+11,"Apr 18, 2024",Tex.,Widget B, Phone,6,"$2,612.00",Very Dissatisfied,
+78,"Feb 24, 2023", FL ,Service X,Social Media,8,$1881.76,Very Satisfied,
+41,08/28/23,N.Y.,Bundle Pro,Phone,4,1328.84,Very Dissatisfied,-
+86,"Aug 26, 2023",Tex.,Service X,Online,9,$356.27,Satisfied,
+184,02/19/24, California,  Service Y ,Referral,1,"$4,031.47",Neutral,Comment for order 184
+68,01/23/24,N.Y.,Basic Plan, Phone,-,"$4,284.48",Neutral,
+119,25-09-2024,Calif.,Service Y,Phone,9,$1659.00,Dissatisfied,Comment for order 119
+79,11/03/23, FL ,  Bundle Pro ,Referral,8,"$2,100.21",Very Dissatisfied,Comment for order 79
+153,"Oct 20, 2024",FL,Bundle Pro,Phone,3,4746.68,Dissatisfied,Comment for order 153
+54,2023-02-15,N.Y.,Service Y,Social Media,5,1403.45,Satisfied,Comment for order 54
+92,"Mar 27, 2024",IL,Bundle Pro,Social Media,5,2428.92,Neutral,
+138,"Sep 24, 2023",california,Widget B,Social Media,7,"$3,034.46",Very Dissatisfied,
+31,20-08-2024,Illinois,Widget B,Phone,three,2399.64,Very Dissatisfied,Comment for order 31
+105,2024-11-12,illinois,Basic Plan,In-Store,,$4264.24,Very Dissatisfied,
+168,20-12-2024,New York,Service X,Social Media,N/A,$4036.93,Neutral,Comment for order 168
+120,11/25/24,Illinois,Widget B,Phone,-,1431.08,Satisfied,Comment for order 120
+139,"May 1, 2024",NY,Widget B,In-Store,,$3493.35,Neutral,Comment for order 139
+43,12/18/24,Tex.,Widget B,Social Media,5,$1191.16,Satisfied,
+157,2024-12-26,Calif.,Basic Plan,Referral,6,$3082.76,Neutral,Comment for order 157
+40,26-10-2024, FL ,Service X,In-Store,10,"$4,265.98",Very Dissatisfied,Comment for order 40
+28,"May 10, 2023",florida,Service Y,In-Store,8,$3394.35,Neutral,Comment for order 28
+150,"Feb 9, 2023",Florida,Service X,Phone,7,$577.43,Very Satisfied,
+181,03/16/23,illinois,Basic Plan,Online,5,678.31,Dissatisfied,
+52,08/03/23,texas,Widget A,Social Media,-,$2050.67,Very Satisfied,
+178,"Jun 11, 2023", FL ,  Widget A , Online,6,,Satisfied,
+178,"Jun 11, 2023", FL ,  Widget A , Online,6,,Satisfied,
+70,10/01/23,New York,  Widget A ,Phone,,$913.76,Satisfied,Comment for order 70
+116,2024-09-02,Calif.,Bundle Pro,In-Store,N/A,"$2,620.70",Very Dissatisfied,Comment for order 116
+82,26-03-2024,TX,Service Y,Referral,N/A,$1254.42,Neutral,
+84,25-03-2023, FL ,Basic Plan, Referral,10,4933.33,Dissatisfied,Comment for order 84
+179,23-11-2024, FL ,  Service X ,Online,2,"$2,711.39",Satisfied,Comment for order 179
+81,09/18/23,ca,Service X,Social Media,1,"$2,325.78",Dissatisfied,
+67,"Apr 18, 2023", FL ,Service Y,In-Store,6,$3728.54,Very Satisfied,Comment for order 67
+75,09/02/23,ca,  Basic Plan ,Phone,N/A,4708.59,Neutral,
+136,"Sep 19, 2023", FL ,Service Y,Phone,-,$4710.85,Dissatisfied,
+34,"Sep 24, 2024",Florida,Basic Plan,Referral,5,193.67,Dissatisfied,Comment for order 34
+170,08/05/24, FL ,Service Y,Phone,8,"$3,983.26",Neutral,Comment for order 170
+112,08-06-2023,california,Service Y,Referral,8,529.22,Satisfied,Comment for order 112
+79,11/03/23, FL ,  Bundle Pro ,Referral,8,"$2,100.21",Very Dissatisfied,Comment for order 79
+146,2024-01-21,NY,Bundle Pro,Online,N/A,3242.29,Very Satisfied,
+152,"Nov 13, 2023",new york,Service Y,Phone,5,$772.38,Very Satisfied,Comment for order 152
+20,2023-05-04,IL,Widget B,Phone,5,1092.62,Neutral,Comment for order 20
+101,15-05-2024,N.Y.,Bundle Pro,Phone,6,3647.73,Very Satisfied,
+164,"Mar 16, 2024",IL,  Bundle Pro ,Phone,8,976.14,Dissatisfied,
+35,2023-07-19,ca,Service Y,Referral,N/A,949.56,Dissatisfied,
+130,2024-09-15,N.Y.,  Service Y ,Referral,,"$2,255.14",Very Satisfied,Comment for order 130
+25,21-06-2024,Illinois,Bundle Pro, Phone,1,"$4,853.48",Very Dissatisfied,Comment for order 25
+149,01/21/24, FL ,Widget B, Referral,4,4708.66,Very Dissatisfied,
+22,"Jun 19, 2023",Florida,Service X,In-Store,1,"$4,499.96",Neutral,Comment for order 22
+118,02-12-2023,N.Y.,  Basic Plan ,Online,N/A,$1248.87,Dissatisfied,
+96,2023-05-14,Illinois,Widget A, Phone,4,$977.20,Very Dissatisfied,Comment for order 96
+180,2024-07-19,Tex.,Widget A, Social Media,4,476.75,Satisfied,
+106,26-04-2023,california,Widget B, Online,9,$2363.66,Dissatisfied,Comment for order 106
+134,26-01-2023,IL,Service Y,Online,4,$549.44,Very Satisfied,Comment for order 134
+60,"Aug 19, 2023",N.Y.,Service X, In-Store,5,3350.86,Neutral,Comment for order 60
+12,2023-12-21,NY,Service X,In-Store,N/A,$400.74,Very Dissatisfied,Comment for order 12
+24,2023-07-28,Florida,Widget B,In-Store,N/A,2328.5,Neutral,Comment for order 24
+72,16-01-2023,FL,Service X,Online,eight,"$2,245.63",Very Dissatisfied,Comment for order 72
+183,02-04-2023,Tex.,Bundle Pro,Referral,3,"$4,803.69",Satisfied,Comment for order 183
+37,2023-08-22,IL,Bundle Pro,Online,8,"$3,846.15",Satisfied,Comment for order 37
+16,2023-05-07,illinois,Bundle Pro,Social Media,9,"$1,602.34",Very Dissatisfied,
+126,28-10-2023,florida,Service Y, In-Store,2,$522.16,Dissatisfied,
+108,"Feb 17, 2023",Texas,Bundle Pro,Online,3,3561.19,Very Dissatisfied,
+61,09-12-2024,Texas,Bundle Pro,Phone,N/A,577.93,Neutral,

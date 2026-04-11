@@ -1,0 +1,620 @@
+import { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import { AnimatePresence, motion } from "framer-motion";
+import { useSessionStore, createMessage } from "@/stores/session-store";
+import { useAppStore } from "@/stores/app-store";
+import { ChatStream } from "@/components/chat/ChatStream";
+import { InputBar } from "@/components/chat/InputBar";
+import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
+import { api } from "@/lib/api";
+import type {
+  DatasetResponse,
+  JobResponse,
+  CleaningStep,
+  ChartConfig,
+  InspectionSummaryPayload,
+  CleaningPlanPayload,
+  CleaningProgressPayload,
+  ValidationSummaryPayload,
+  CleaningResultsPayload,
+  ManipulationPreviewPayload,
+  ManipulationResultPayload,
+} from "@/types";
+
+/* ── Helpers ────────────────────────────────────────────────────────────── */
+
+function generateId(): string {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/* ── Component ──────────────────────────────────────────────────────────── */
+
+export default function Chat() {
+  const activeSessionId = useSessionStore((s) => s.activeSessionId);
+  const EMPTY_MESSAGES: readonly import("@/types").ChatMessageV2[] = useMemo(() => [], []);
+  const rawMessages = useSessionStore(
+    (s) => (activeSessionId ? s.messagesBySession[activeSessionId] : undefined),
+  );
+  const messages = rawMessages ?? EMPTY_MESSAGES;
+  const workflowState = useSessionStore((s) => s.workflowState);
+  const addMessage = useSessionStore((s) => s.addMessage);
+  const createSession = useSessionStore((s) => s.createSession);
+  const setSessionDatasetId = useSessionStore((s) => s.setSessionDatasetId);
+  const startWorkflow = useSessionStore((s) => s.startWorkflow);
+  const setWorkflowStep = useSessionStore((s) => s.setWorkflowStep);
+  const clearWorkflow = useSessionStore((s) => s.clearWorkflow);
+  const renameSession = useSessionStore((s) => s.renameSession);
+
+  const addCharts = useAppStore((s) => s.addCharts);
+  const setChartPanelOpen = useAppStore((s) => s.setChartPanelOpen);
+  const clearCharts = useAppStore((s) => s.clearCharts);
+
+  const [input, setInput] = useState("");
+  const [sending, setSending] = useState(false);
+
+  // Ensure a session exists
+  useEffect(() => {
+    if (!activeSessionId) {
+      createSession();
+    }
+  }, [activeSessionId, createSession]);
+
+  // Clear charts only when the session *actually* changes (not on initial mount)
+  const prevSessionRef = useRef(activeSessionId);
+  useEffect(() => {
+    if (prevSessionRef.current !== activeSessionId && prevSessionRef.current !== null) {
+      clearCharts();
+    }
+    prevSessionRef.current = activeSessionId;
+  }, [activeSessionId, clearCharts]);
+
+  /* ── Upload handler ──────────────────────────────────────────────────── */
+
+  const handleFileAttach = useCallback(
+    async (file: File) => {
+      let sessionId = activeSessionId;
+      if (!sessionId) {
+        sessionId = createSession(file.name);
+      }
+
+      setSending(true);
+      addMessage(sessionId, createMessage("system", `Uploading **${file.name}**...`));
+
+      try {
+        // Upload file directly through the backend (avoids CORS with MinIO)
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const uploadResp = await api
+          .post("datasets/upload", { body: formData })
+          .json<{ dataset_id: string }>();
+
+        const datasetId = uploadResp.dataset_id;
+        setSessionDatasetId(sessionId, datasetId);
+        renameSession(sessionId, file.name);
+
+        // 4. Wait for profiling
+        addMessage(sessionId, createMessage("system", "Profiling your dataset..."));
+        const ready = await pollDatasetReady(datasetId);
+
+        // 5. Show ready message — don't trigger cleaning, let user choose
+        addMessage(
+          sessionId,
+          createMessage(
+            "assistant",
+            `**${ready.filename}** is ready — ${ready.row_count?.toLocaleString()} rows, ${ready.col_count} columns.\n\nWhat would you like to do with it?`,
+          ),
+        );
+      } catch (err) {
+        addMessage(
+          sessionId,
+          createMessage("system", `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+        );
+      } finally {
+        setSending(false);
+      }
+    },
+    [activeSessionId, addMessage, createSession, setSessionDatasetId, renameSession],
+  );
+
+  /* ── Table paste handler ─────────────────────────────────────────────── */
+
+  const handleTablePaste = useCallback(
+    (_text: string) => {
+      // TODO: Convert pasted table text to CSV file and upload
+      const sessionId = activeSessionId ?? createSession();
+      addMessage(sessionId, createMessage("system", "Table paste is coming soon. Please upload a CSV or Excel file."));
+    },
+    [activeSessionId, addMessage, createSession],
+  );
+
+  /* ── Send message / route intent ─────────────────────────────────────── */
+
+  const handleSend = useCallback(async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+
+    let sessionId = activeSessionId;
+    if (!sessionId) {
+      sessionId = createSession();
+    }
+
+    setInput("");
+    addMessage(sessionId, createMessage("user", text));
+
+    const sessions = useSessionStore.getState().sessions;
+    const session = sessions.find((s) => s.id === sessionId);
+    const datasetId = session?.datasetId;
+
+    // Route by intent
+    const lowerText = text.toLowerCase();
+    const isCleanIntent = lowerText.includes("clean") || lowerText === "clean my dataset";
+    const isAnalyzeIntent = lowerText.includes("analyze") || lowerText.includes("analyse") || lowerText === "analyze my data";
+    const isReportIntent = lowerText.includes("report") || lowerText === "create a report";
+    const isManipulationIntent = /\b(delete|remove|drop|rename|sort|filter|add column|merge|format|move column|split|reorder|restructure)\b/i.test(lowerText);
+
+    if (!datasetId && (isCleanIntent || isAnalyzeIntent || isReportIntent || isManipulationIntent)) {
+      addMessage(
+        sessionId,
+        createMessage("assistant", "I need some data to work with. Please attach a CSV or Excel file using the **+** button, then try again."),
+      );
+      return;
+    }
+
+    if (isCleanIntent && datasetId) {
+      await runCleaningWorkflow(sessionId, datasetId);
+      return;
+    }
+
+    if (isManipulationIntent && datasetId) {
+      setSending(true);
+      try {
+        addMessage(sessionId, createMessage("system", "Parsing your edit command..."));
+
+        const preview = await api
+          .post(`manipulation/${datasetId}/parse`, {
+            json: { command: text },
+            timeout: 60_000,
+          })
+          .json<{
+            operations: Array<{ op_type: string; params: Record<string, unknown>; description: string }>;
+            preview_before: Record<string, unknown>[];
+            preview_after: Record<string, unknown>[];
+            affected_columns: string[];
+            affected_row_count: number;
+            warnings: string[];
+            confirmation_required: boolean;
+          }>();
+
+        const previewCard: ManipulationPreviewPayload = {
+          type: "manipulation_preview",
+          command: text,
+          operations: preview.operations.map(op => ({
+            opType: op.op_type,
+            params: op.params,
+            description: op.description,
+          })),
+          previewBefore: preview.preview_before,
+          previewAfter: preview.preview_after,
+          affectedColumns: preview.affected_columns,
+          affectedRowCount: preview.affected_row_count,
+          warnings: preview.warnings,
+          confirmationRequired: preview.confirmation_required,
+        };
+        addMessage(sessionId, createMessage("assistant", "", previewCard));
+      } catch (err) {
+        addMessage(sessionId, createMessage("system", `Edit failed: ${err instanceof Error ? err.message : "Unknown error"}`));
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    if (isAnalyzeIntent && datasetId) {
+      setSending(true);
+      try {
+        const resp = await api
+          .post(`analysis/${datasetId}/chat`, {
+            json: { message: text },
+            timeout: 180_000,
+          })
+          .json<{ id: string; messages_json: Array<{ role: string; content: string; charts?: ChartConfig[] }> }>();
+
+        const lastMsg = resp.messages_json[resp.messages_json.length - 1];
+        if (lastMsg && lastMsg.role === "assistant") {
+          addMessage(sessionId, createMessage("assistant", lastMsg.content));
+          if (lastMsg.charts && lastMsg.charts.length > 0) {
+            addCharts(lastMsg.charts);
+            setChartPanelOpen(true);
+          }
+        }
+      } catch (err) {
+        addMessage(
+          sessionId,
+          createMessage("system", `Analysis error: ${err instanceof Error ? err.message : "Unknown error"}`),
+        );
+      } finally {
+        setSending(false);
+      }
+      return;
+    }
+
+    // Default: general chat / analysis
+    if (datasetId) {
+      setSending(true);
+      try {
+        const resp = await api
+          .post(`analysis/${datasetId}/chat`, {
+            json: { message: text },
+            timeout: 180_000,
+          })
+          .json<{ id: string; messages_json: Array<{ role: string; content: string; charts?: ChartConfig[] }> }>();
+
+        const lastMsg = resp.messages_json[resp.messages_json.length - 1];
+        if (lastMsg && lastMsg.role === "assistant") {
+          addMessage(sessionId, createMessage("assistant", lastMsg.content));
+          if (lastMsg.charts && lastMsg.charts.length > 0) {
+            addCharts(lastMsg.charts);
+            setChartPanelOpen(true);
+          }
+        }
+      } catch (err) {
+        addMessage(
+          sessionId,
+          createMessage("system", `Error: ${err instanceof Error ? err.message : "Unknown error"}`),
+        );
+      } finally {
+        setSending(false);
+      }
+    } else {
+      addMessage(
+        sessionId,
+        createMessage("assistant", "Welcome! Upload a CSV or Excel file to get started. Click the **+** button or drag a file into the chat."),
+      );
+    }
+  }, [input, sending, activeSessionId, addMessage, createSession]);
+
+  /* ── Cleaning workflow ───────────────────────────────────────────────── */
+
+  async function runCleaningWorkflow(sessionId: string, datasetId: string) {
+    setSending(true);
+
+    try {
+      // Fetch dataset info
+      const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
+      startWorkflow(datasetId, dataset.filename);
+
+      // ── Step 1: Inspect ──────────────────────────────────────
+      setWorkflowStep("inspect", "active");
+      addMessage(sessionId, createMessage("system", "Inspecting your dataset..."));
+
+      const profile = dataset.profile_json as Record<string, unknown> | null;
+      const columns = profile?.columns as Record<string, Record<string, unknown>> | undefined;
+
+      const inspectionCard: InspectionSummaryPayload = {
+        type: "inspection_summary",
+        filename: dataset.filename,
+        rowCount: dataset.row_count ?? 0,
+        colCount: dataset.col_count ?? 0,
+        fileSizeBytes: dataset.file_size_bytes,
+        columns: columns
+          ? Object.entries(columns).map(([name, col]) => ({
+              name,
+              dtype: (col.dtype as string) ?? "unknown",
+              nullPct: (col.null_pct as number) ?? 0,
+              uniqueCount: (col.unique_count as number) ?? 0,
+            }))
+          : [],
+      };
+
+      addMessage(sessionId, createMessage("assistant", "", inspectionCard));
+      setWorkflowStep("inspect", "complete");
+
+      // ── Step 2: Plan ─────────────────────────────────────────
+      setWorkflowStep("plan", "active");
+      addMessage(sessionId, createMessage("system", "Generating cleaning plan..."));
+
+      const planJob = await api
+        .post(`cleaning/${datasetId}/plan`, { json: {}, timeout: 180_000 })
+        .json<JobResponse>();
+
+      // The plan endpoint returns a JobResponse — steps live inside result_json
+      const planData = planJob.result_json as { steps: CleaningStep[]; summary: string } | null;
+      if (!planData?.steps?.length) {
+        throw new Error("No cleaning steps were generated. Try again or check your dataset.");
+      }
+
+      const planCard: CleaningPlanPayload = {
+        type: "cleaning_plan",
+        summary: planData.summary ?? `AI-generated cleaning plan with ${planData.steps.length} steps`,
+        steps: planData.steps.map((s) => ({ ...s, confidence: 0.9 })),
+      };
+
+      addMessage(sessionId, createMessage("assistant", "", planCard));
+      setWorkflowStep("plan", "complete");
+
+      // ── Step 3: Clean ────────────────────────────────────────
+      setWorkflowStep("clean", "active");
+
+      const progressMsgId = generateId();
+      const progressCard: CleaningProgressPayload = {
+        type: "cleaning_progress",
+        progress: 0,
+        status: "running",
+        message: "Applying cleaning plan...",
+      };
+      addMessage(sessionId, {
+        id: progressMsgId,
+        role: "assistant",
+        content: "",
+        card: progressCard,
+        timestamp: new Date().toISOString(),
+      });
+
+      const applyJob = await api
+        .post(`cleaning/${datasetId}/apply`, {
+          json: { steps: planData.steps },
+          timeout: 180_000,
+        })
+        .json<JobResponse>();
+
+      // Poll job — apply endpoint returns JobResponse with id, not job_id
+      const jobResult = await pollJob(applyJob.id);
+
+      // Update progress card to complete
+      const updateMessage = useSessionStore.getState().updateMessage;
+      updateMessage(sessionId, progressMsgId, {
+        card: {
+          type: "cleaning_progress",
+          progress: 100,
+          status: "complete",
+          message: "Cleaning complete!",
+        },
+      });
+
+      setWorkflowStep("clean", "complete");
+
+      // ── Step 4: Validate ─────────────────────────────────────
+      setWorkflowStep("validate", "active");
+      addMessage(sessionId, createMessage("system", "Validating results..."));
+
+      const result = jobResult.result_json as Record<string, unknown> | null;
+      const verification = result?.verification as Record<string, unknown> | undefined;
+
+      if (verification) {
+        const stepResults = (verification.step_results as Array<Record<string, unknown>>) ?? [];
+        const validationCard: ValidationSummaryPayload = {
+          type: "validation_summary",
+          results: stepResults.map((r, idx) => ({
+            stepDescription: `Step ${((r.step_index as number) ?? idx) + 1}: [${r.operation ?? "unknown"}] ${r.column ? `on "${r.column}"` : "(all columns)"}`,
+            passed: (r.passed as boolean) ?? false,
+            detail: (r.actual as string) ?? null,
+          })),
+          overallPassed: (verification.overall_passed as boolean) ?? stepResults.every((r) => r.passed),
+        };
+        addMessage(sessionId, createMessage("assistant", "", validationCard));
+      }
+
+      setWorkflowStep("validate", "complete");
+
+      // ── Final results card ───────────────────────────────────
+      const rowsBefore = dataset.row_count ?? 0;
+      // result_json fields: cleaned_rows, rows_removed, cells_modified
+      const rowsAfter = (result?.cleaned_rows as number) ?? rowsBefore;
+      const issuesResolved = (result?.cells_modified as number) ?? 0;
+      const remediationApplied = !!(
+        (result?.verification as Record<string, unknown> | undefined)
+          ?.agent_assessment as Record<string, unknown> | undefined
+      )?.remediation_applied;
+
+      const resultsCard: CleaningResultsPayload = {
+        type: "cleaning_results",
+        downloadUrl: `/api/v1/cleaning/${applyJob.id}/download`,
+        rowsBefore,
+        rowsAfter,
+        issuesResolved,
+        datasetId,
+        remediationApplied,
+      };
+      addMessage(sessionId, createMessage("assistant", "", resultsCard));
+
+      clearWorkflow();
+    } catch (err) {
+      addMessage(
+        sessionId,
+        createMessage("system", `Cleaning error: ${err instanceof Error ? err.message : "Unknown error"}`),
+      );
+      clearWorkflow();
+    } finally {
+      setSending(false);
+    }
+  }
+
+  /* ── Card actions ────────────────────────────────────────────────────── */
+
+  const handleCardAction = useCallback(
+    async (action: string, data?: unknown) => {
+      if (action === "download" && typeof data === "string") {
+        // Use an anchor click so the browser triggers a proper file download
+        // (the URL now streams the file directly — no JSON redirect needed)
+        const a = document.createElement("a");
+        a.href = data;
+        a.download = "";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+      if (action === "analyze" && typeof data === "string") {
+        const sessionId = activeSessionId;
+        if (sessionId) {
+          setInput("Analyze my data");
+        }
+      }
+
+      if (action === "apply_manipulation" && data) {
+        const sessionId = activeSessionId;
+        if (!sessionId) return;
+        const sessions = useSessionStore.getState().sessions;
+        const session = sessions.find((s) => s.id === sessionId);
+        const datasetId = session?.datasetId;
+        if (!datasetId) return;
+
+        setSending(true);
+        addMessage(sessionId, createMessage("system", "Applying changes..."));
+        try {
+          const operations = (data as Array<{ opType: string; params: Record<string, unknown>; description: string }>).map(op => ({
+            op_type: op.opType,
+            params: op.params,
+            description: op.description,
+          }));
+          const result = await api
+            .post(`manipulation/${datasetId}/apply`, {
+              json: { operations },
+              timeout: 60_000,
+            })
+            .json<{
+              success: boolean;
+              snapshot_id: string;
+              new_row_count: number;
+              new_col_count: number;
+              columns_added: string[];
+              columns_removed: string[];
+              columns_renamed: Record<string, string>;
+              sample_rows: Record<string, unknown>[];
+            }>();
+
+          const resultCard: ManipulationResultPayload = {
+            type: "manipulation_result",
+            success: result.success,
+            snapshotId: result.snapshot_id,
+            newRowCount: result.new_row_count,
+            newColCount: result.new_col_count,
+            columnsAdded: result.columns_added,
+            columnsRemoved: result.columns_removed,
+            columnsRenamed: result.columns_renamed,
+            sampleRows: result.sample_rows,
+          };
+          addMessage(sessionId, createMessage("assistant", "", resultCard));
+        } catch (err) {
+          addMessage(sessionId, createMessage("system", `Apply failed: ${err instanceof Error ? err.message : "Unknown error"}`));
+        } finally {
+          setSending(false);
+        }
+      }
+
+      if (action === "cancel_manipulation") {
+        const sessionId = activeSessionId;
+        if (sessionId) {
+          addMessage(sessionId, createMessage("system", "Edit cancelled."));
+        }
+      }
+
+      if (action === "undo_manipulation" && typeof data === "string") {
+        const sessionId = activeSessionId;
+        if (!sessionId) return;
+        const sessions = useSessionStore.getState().sessions;
+        const session = sessions.find((s) => s.id === sessionId);
+        const datasetId = session?.datasetId;
+        if (!datasetId) return;
+
+        setSending(true);
+        addMessage(sessionId, createMessage("system", "Undoing changes..."));
+        try {
+          const result = await api
+            .post(`manipulation/${datasetId}/undo`, {
+              json: { snapshot_id: data },
+              timeout: 30_000,
+            })
+            .json<{
+              success: boolean;
+              snapshot_id: string;
+              new_row_count: number;
+              new_col_count: number;
+              sample_rows: Record<string, unknown>[];
+            }>();
+
+          addMessage(sessionId, createMessage("system", `Undo complete — restored to ${result.new_row_count} rows, ${result.new_col_count} columns.`));
+        } catch (err) {
+          addMessage(sessionId, createMessage("system", `Undo failed: ${err instanceof Error ? err.message : "Unknown error"}`));
+        } finally {
+          setSending(false);
+        }
+      }
+    },
+    [activeSessionId, addMessage, setSending],
+  );
+
+  /* ── Chip click ──────────────────────────────────────────────────────── */
+
+  const handleChipClick = useCallback(
+    (text: string) => {
+      setInput(text);
+    },
+    [],
+  );
+
+  /* ── Render ──────────────────────────────────────────────────────────── */
+
+  return (
+    <div className="flex h-full flex-col">
+      {/* Workflow stepper (visible during cleaning) */}
+      <AnimatePresence>
+        {workflowState && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 30 }}
+            className="border-b border-[var(--line)] bg-[var(--surface-primary)] px-4 py-2 overflow-hidden"
+          >
+            <WorkflowStepper steps={workflowState.steps} filename={workflowState.datasetFilename} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Chat stream */}
+      <ChatStream
+        messages={messages}
+        sending={sending}
+        onChipClick={handleChipClick}
+        onCardAction={handleCardAction}
+      />
+
+      {/* Input bar */}
+      <InputBar
+        value={input}
+        onChange={setInput}
+        onSend={() => void handleSend()}
+        onFileAttach={(file) => void handleFileAttach(file)}
+        onTablePaste={handleTablePaste}
+        onChipClick={handleChipClick}
+        sending={sending}
+        showChips={messages.length === 0}
+      />
+    </div>
+  );
+}
+
+/* ── Polling helpers ──────────────────────────────────────────────────── */
+
+async function pollDatasetReady(datasetId: string, maxAttempts = 30): Promise<DatasetResponse> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
+    if (dataset.status === "ready") return dataset;
+    if (dataset.status === "error") throw new Error("Profiling failed");
+  }
+  throw new Error("Profiling timed out");
+}
+
+async function pollJob(
+  jobId: string,
+  maxAttempts = 120,
+): Promise<{ status: string; result_json: unknown }> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const job = await api.get(`jobs/${jobId}`).json<{ status: string; result_json: unknown; error_text: string | null }>();
+    if (job.status === "completed") return job;
+    if (job.status === "failed") throw new Error(job.error_text ?? "Job failed");
+  }
+  throw new Error("Job timed out");
+}
