@@ -46,3 +46,7 @@ postgres-data/
 *.tmp
 *.log
 tmp/
+.vercel
+
+# Claude AI
+.claude/
