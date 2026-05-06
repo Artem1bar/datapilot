@@ -11,6 +11,8 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 - **Workflow stepper** — visual step-by-step progress through Inspect → Plan → Clean → Validate
 - **Data manipulation** — filter, rename, pivot, aggregate, and transform columns via natural language
 - **Multi-sheet support** — handles Excel workbooks with multiple sheets
+- **Cleaning recipes** — save a cleaning plan as a reusable template and apply it to new datasets in one click
+- **AI data dictionary** — auto-generate a column-level data dictionary with field descriptions, types, and quality notes
 - **Cleaned dataset library** — all processed datasets are stored and can be re-downloaded at any time
 - **Export** — download cleaned files as CSV, Excel, or Parquet
 - **Real-time progress** — WebSocket-streamed job updates so you see cleaning progress live
@@ -26,7 +28,7 @@ apps/
 │       └── stores/     # Zustand state (sessions, workflow, app)
 └── api/                # FastAPI backend
     └── app/
-        ├── routers/    # REST endpoints (cleaning, datasets, jobs, manipulation, export)
+        ├── routers/    # REST endpoints (cleaning, datasets, jobs, manipulation, export, recipes, dictionary)
         ├── services/   # AI agent, schema inference, cleaning execution, storage
         ├── models/     # SQLAlchemy ORM (Dataset, Job)
         └── tasks/      # Background job workers
