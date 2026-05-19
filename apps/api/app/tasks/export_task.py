@@ -120,7 +120,7 @@ def export_dataset(
 
         # Parse the file
         df = _read_dataframe(file_bytes, dataset.filename)
-        _publish_progress_sync(job_id, "running", 50, "Exporting to %s" % format)
+        _publish_progress_sync(job_id, "running", 50, f"Exporting to {format}")
 
         # Parse columns if provided
         columns: list[str] | None = None

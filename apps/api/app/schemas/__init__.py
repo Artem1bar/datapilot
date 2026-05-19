@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -13,21 +13,21 @@ from pydantic import BaseModel, ConfigDict, Field
 # Enums
 # ---------------------------------------------------------------------------
 
-class JobStatus(str, Enum):
+class JobStatus(StrEnum):
     pending = "pending"
     running = "running"
     completed = "completed"
     failed = "failed"
 
 
-class DatasetStatus(str, Enum):
+class DatasetStatus(StrEnum):
     uploaded = "uploaded"
     profiling = "profiling"
     ready = "ready"
     error = "error"
 
 
-class ExportFormat(str, Enum):
+class ExportFormat(StrEnum):
     csv = "csv"
     xlsx = "xlsx"
     parquet = "parquet"
