@@ -9,16 +9,20 @@ from __future__ import annotations
 import io
 import logging
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, date
+from datetime import datetime as dt
 
 import numpy as np
 import pandas as pd
+from sqlalchemy import select, update
+
+from app.config import settings
+from app.services.storage import download_file_bytes
+from app.tasks.celery_app import celery_app
 
 
 def _to_python(obj):
     """Recursively convert numpy/pandas/datetime types to plain Python for JSON safety."""
-    from datetime import date
-    from datetime import datetime as dt
     if isinstance(obj, dict):
         return {k: _to_python(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -36,11 +40,6 @@ def _to_python(obj):
     if hasattr(obj, 'item'):  # catches remaining numpy scalars
         return obj.item()
     return obj
-from sqlalchemy import select, update
-
-from app.config import settings
-from app.services.storage import download_file_bytes
-from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
