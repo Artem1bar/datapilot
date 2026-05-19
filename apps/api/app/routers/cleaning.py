@@ -47,7 +47,7 @@ class ApplyCleaningRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
+def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:  # noqa: F821
     """Read the full file into a DataFrame."""
     import pandas as pd
 

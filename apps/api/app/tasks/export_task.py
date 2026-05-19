@@ -111,11 +111,9 @@ def export_dataset(
 
         try:
             file_bytes = download_file_bytes(cleaned_r2_key)
-            source_key = cleaned_r2_key
             logger.info("Using cleaned version for dataset %s", dataset_id)
         except Exception:
             file_bytes = download_file_bytes(dataset.r2_key)
-            source_key = dataset.r2_key
             logger.info("Using original version for dataset %s", dataset_id)
 
         _publish_progress_sync(job_id, "running", 30, "Parsing file")
