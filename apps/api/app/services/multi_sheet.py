@@ -76,7 +76,7 @@ def _read_single(file_bytes: bytes, filename: str) -> pd.DataFrame:
         return pd.read_excel(io.BytesIO(file_bytes))
     elif lower.endswith(".parquet"):
         return pd.read_parquet(io.BytesIO(file_bytes))
-    elif lower.endswith(".tsv"):
+    elif lower.endswith((".tsv", ".tab")):
         return pd.read_csv(io.BytesIO(file_bytes), sep="\t")
     elif lower.endswith(".json"):
         return pd.read_json(io.BytesIO(file_bytes))
