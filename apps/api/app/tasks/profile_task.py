@@ -9,7 +9,7 @@ from __future__ import annotations
 import io
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import numpy as np
 import pandas as pd
@@ -17,7 +17,8 @@ import pandas as pd
 
 def _to_python(obj):
     """Recursively convert numpy/pandas/datetime types to plain Python for JSON safety."""
-    from datetime import date, datetime as dt
+    from datetime import date
+    from datetime import datetime as dt
     if isinstance(obj, dict):
         return {k: _to_python(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -37,9 +38,9 @@ def _to_python(obj):
     return obj
 from sqlalchemy import select, update
 
-from app.tasks.celery_app import celery_app
 from app.config import settings
 from app.services.storage import download_file_bytes
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ def _get_sync_engine():
 def _publish_progress_sync(job_id: str, status: str, progress: int, message: str = "") -> None:
     """Publish job progress via Redis (synchronous)."""
     import json
+
     import redis
 
     try:
@@ -109,7 +111,7 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
             return False
         return bool(_NUMERIC_PATTERNS.search(col_name))
 
-    def _is_mostly_short(vals: "pd.Series") -> bool:  # noqa: F821
+    def _is_mostly_short(vals: pd.Series) -> bool:  # noqa: F821
         """True if most values are short strings (< 30 chars) — likely amounts, not paragraphs."""
         return float(vals.str.len().median()) < 30
 
@@ -432,6 +434,7 @@ def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
 def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
     """Download a dataset from MinIO, profile it, and store results in the DB."""
     from sqlalchemy.orm import Session
+
     from app.models.dataset import Dataset
     from app.models.job import Job
 
@@ -474,7 +477,7 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
 
         # Write results back
         with Session(engine) as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             session.execute(
                 update(Dataset)
@@ -517,7 +520,7 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
                 .values(
                     status="failed",
                     error_text=str(exc),
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(UTC),
                 )
             )
             session.commit()

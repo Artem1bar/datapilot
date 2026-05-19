@@ -1,7 +1,6 @@
 """Dataset comparison service — diff two datasets."""
 from __future__ import annotations
 
-import io
 import logging
 from typing import Any
 

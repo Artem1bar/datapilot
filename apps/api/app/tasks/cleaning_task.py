@@ -11,15 +11,15 @@ import json
 import logging
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import pandas as pd
 from sqlalchemy import select, update
 
-from app.tasks.celery_app import celery_app
 from app.config import settings
 from app.services.storage import download_file_bytes, get_s3_client
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +169,7 @@ def _make_cleaned_key(r2_key: str) -> str:
 def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
     """Download a dataset, apply cleaning steps, and upload the cleaned result."""
     from sqlalchemy.orm import Session
+
     from app.models.dataset import Dataset
     from app.models.job import Job
 
@@ -423,7 +424,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         }
 
         with Session(engine) as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             session.execute(
                 update(Job)
@@ -455,7 +456,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                 .values(
                     status="failed",
                     error_text=str(exc),
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(UTC),
                 )
             )
             session.commit()

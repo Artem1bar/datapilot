@@ -52,17 +52,17 @@ def create_app() -> FastAPI:
     )
 
     # --- Mount routers ---
-    from app.routers.health import router as health_router
-    from app.routers.auth import router as auth_router
-    from app.routers.datasets import router as datasets_router
-    from app.routers.jobs import router as jobs_router
-    from app.routers.cleaning import router as cleaning_router
     from app.routers.analysis import router as analysis_router
-    from app.routers.manipulation import router as manipulation_router
-    from app.routers.exports import router as exports_router
-    from app.routers.ws import router as ws_router
+    from app.routers.auth import router as auth_router
+    from app.routers.cleaning import router as cleaning_router
+    from app.routers.datasets import router as datasets_router
     from app.routers.dictionary import router as dictionary_router
+    from app.routers.exports import router as exports_router
+    from app.routers.health import router as health_router
+    from app.routers.jobs import router as jobs_router
+    from app.routers.manipulation import router as manipulation_router
     from app.routers.recipes import router as recipes_router
+    from app.routers.ws import router as ws_router
 
     # Health check at root level
     app.include_router(health_router)

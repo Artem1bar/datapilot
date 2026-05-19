@@ -10,15 +10,15 @@ import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, status
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.deps import CurrentUser, DBSession
 from app.models.dataset import Dataset
 from app.models.job import Job
-from app.schemas import CleaningStep, CleaningPlan, JobResponse, DatasetResponse, VerificationResult
-from app.services.storage import download_file_bytes, create_presigned_download_url
+from app.schemas import CleaningStep, JobResponse, VerificationResult
+from app.services.storage import download_file_bytes
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class ApplyCleaningRequest(BaseModel):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _read_dataframe(file_bytes: bytes, filename: str) -> "pd.DataFrame":
+def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
     """Read the full file into a DataFrame."""
     import pandas as pd
 

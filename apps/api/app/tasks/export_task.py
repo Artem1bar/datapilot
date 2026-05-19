@@ -10,14 +10,14 @@ import io
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pandas as pd
 from sqlalchemy import select, update
 
-from app.tasks.celery_app import celery_app
 from app.config import settings
 from app.services.storage import download_file_bytes, get_s3_client
+from app.tasks.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,7 @@ def export_dataset(
 ) -> dict:
     """Export a dataset to the requested format and upload to storage."""
     from sqlalchemy.orm import Session
+
     from app.models.dataset import Dataset
     from app.models.job import Job
     from app.services.export import (
@@ -144,7 +145,7 @@ def export_dataset(
         _publish_progress_sync(job_id, "running", 70, "Uploading exported file")
 
         # Upload to MinIO/R2
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
         export_key = f"exports/{dataset_id}/{timestamp}.{format}"
 
         s3 = get_s3_client()
@@ -158,7 +159,7 @@ def export_dataset(
 
         # Update job with result
         with Session(engine) as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             session.execute(
                 update(Job)
                 .where(Job.id == uuid.UUID(job_id))
@@ -186,7 +187,7 @@ def export_dataset(
                 .values(
                     status="failed",
                     error_text=str(exc),
-                    completed_at=datetime.now(timezone.utc),
+                    completed_at=datetime.now(UTC),
                 )
             )
             session.commit()

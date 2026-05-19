@@ -20,11 +20,11 @@ from app.schemas.manipulation import (
     ManipulationUndoRequest,
 )
 from app.services.manipulation import (
+    ManipulationError,
     apply_manipulation,
     create_snapshot,
     generate_preview,
     parse_manipulation_intent,
-    ManipulationError,
 )
 from app.services.manipulation_executor import ManipulationError as ExecError
 from app.services.storage import download_file_bytes, upload_file_bytes

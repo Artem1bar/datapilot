@@ -11,7 +11,7 @@ import anthropic
 import pandas as pd
 
 from app.config import settings
-from app.services.manipulation_executor import execute_operations, ManipulationError
+from app.services.manipulation_executor import ManipulationError, execute_operations
 from app.services.storage import download_file_bytes, upload_file_bytes
 
 logger = logging.getLogger(__name__)

@@ -6,10 +6,8 @@ import logging
 import uuid
 
 import pandas as pd
-
-from fastapi import APIRouter, HTTPException, UploadFile, File, status
+from fastapi import APIRouter, File, HTTPException, UploadFile, status
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import CurrentUser, DBSession
 from app.models.dataset import Dataset
@@ -21,7 +19,12 @@ from app.schemas import (
     UploadUrlRequest,
     UploadUrlResponse,
 )
-from app.services.storage import create_presigned_upload_url, download_file_bytes, generate_upload_key, upload_file_bytes
+from app.services.storage import (
+    create_presigned_upload_url,
+    download_file_bytes,
+    generate_upload_key,
+    upload_file_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -202,7 +205,6 @@ async def get_schema(
 ) -> dict:
     """Infer and return the dataset schema."""
     import asyncio
-    import io
 
     result = await db.execute(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.user_id == user.id)
@@ -228,7 +230,6 @@ async def validate_schema(
 ) -> dict:
     """Validate dataset against a schema (inferred or provided)."""
     import asyncio
-    import io
 
     result = await db.execute(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.user_id == user.id)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import boto3
@@ -36,7 +36,7 @@ def get_s3_client():
 
 def generate_upload_key(user_id: uuid.UUID, filename: str) -> str:
     """Return a unique S3 object key for a user upload."""
-    ts = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+    ts = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
     unique = uuid.uuid4().hex[:8]
     # Strip directory components to prevent path traversal, then sanitize
     safe_name = Path(filename).name

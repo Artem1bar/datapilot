@@ -15,7 +15,6 @@ from app.models.cleaning_recipe import CleaningRecipe
 from app.models.dataset import Dataset
 from app.models.job import Job
 from app.schemas import CleaningRecipeResponse, CleaningStep
-from app.services.storage import download_file_bytes
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["recipes"])
