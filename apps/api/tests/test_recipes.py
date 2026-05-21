@@ -23,7 +23,6 @@ from app.routers.recipes import (
 )
 from app.schemas import CleaningRecipeResponse
 
-
 # ---------------------------------------------------------------------------
 # Fixtures / helpers
 # ---------------------------------------------------------------------------
@@ -106,8 +105,6 @@ class TestSaveRecipe:
     @pytest.mark.asyncio
     async def test_save_from_job_uses_clean_type(self):
         """Querying a job must filter by type='clean', not 'cleaning' (regression)."""
-        from sqlalchemy import select
-        from app.models.job import Job
 
         job = MagicMock()
         job.input_json = {"steps": VALID_STEPS}

@@ -5,14 +5,11 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from app.services.verification_agent import (
     AgentVerificationResult,
     _parse_agent_response,
     run_verification_agent,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -153,8 +150,9 @@ class TestRunVerificationAgent:
     @patch("app.services.verification_agent._get_client")
     @patch("app.services.verification_agent._SYSTEM_PROMPT_PATH")
     def test_run_verification_agent_rate_limit_retry(self, mock_path, mock_get_client, mock_sleep):
-        from anthropic import RateLimitError
         from unittest.mock import PropertyMock
+
+        from anthropic import RateLimitError
 
         mock_path.read_text.return_value = "You are a verification agent."
 

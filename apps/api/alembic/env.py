@@ -1,15 +1,15 @@
 import asyncio
 import sys
-from pathlib import Path
 from logging.config import fileConfig
+from pathlib import Path
 
 # Ensure the project root is on sys.path so 'app' is importable
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from alembic import context
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
+from alembic import context
 from app.db.base import Base
 from app.models import ChatSession, CleaningRecipe, Dataset, Job, User  # noqa: F401
 

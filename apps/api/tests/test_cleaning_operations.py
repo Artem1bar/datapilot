@@ -7,10 +7,8 @@ the output is correct and the audit log captures the changes.
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from app.services.cleaning import execute_cleaning_plan
-
 
 # ---------------------------------------------------------------------------
 # Helpers

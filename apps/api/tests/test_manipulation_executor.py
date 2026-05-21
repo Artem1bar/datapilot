@@ -26,7 +26,6 @@ from app.services.manipulation_executor import (
     execute_split_column,
 )
 
-
 # ── Fixtures ──────────────────────────────────────────────────────────────────
 
 

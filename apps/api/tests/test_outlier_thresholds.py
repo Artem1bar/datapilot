@@ -14,10 +14,8 @@ unintentionally — re-read the original PR before changing them.
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from app.services.cleaning import execute_cleaning_plan
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -134,7 +132,6 @@ class TestProfileTaskOutlierFence:
 
     def _compute_fence(self, values: list[float]) -> float:
         """Replicate the exact fence logic from profile_task.py."""
-        import numpy as np
         arr = pd.Series(values)
         q25, q75 = arr.quantile(0.25), arr.quantile(0.75)
         iqr = q75 - q25

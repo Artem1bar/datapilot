@@ -7,21 +7,19 @@ to ensure the verification logic correctly identifies pass/fail states.
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from app.services.verification import (
     VerificationReport,
-    verify_cleaning_result,
-    _validate_remove_currency_symbols,
-    _validate_free_to_zero,
-    _validate_extract_number,
+    _compute_audit_completeness,
     _validate_convert_number_words,
+    _validate_deduplicate,
+    _validate_extract_number,
+    _validate_free_to_zero,
+    _validate_remove_currency_symbols,
     _validate_remove_vague_entries,
     _validate_strip_whitespace,
-    _validate_deduplicate,
-    _compute_audit_completeness,
+    verify_cleaning_result,
 )
-
 
 # ---------------------------------------------------------------------------
 # Per-operation validator tests
