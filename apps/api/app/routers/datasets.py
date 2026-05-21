@@ -303,7 +303,7 @@ async def preview_data(
     cell_annotations: dict[str, list[dict]] = {}
     for col in page_df.columns:
         col_flags = quality_flags.get(col, {})
-        for row_idx, (df_idx, val) in enumerate(page_df[col].items()):
+        for row_idx, (_df_idx, val) in enumerate(page_df[col].items()):
             annotations: list[dict] = []
             if pd.isna(val):
                 annotations.append({"type": "null", "severity": "warning"})
