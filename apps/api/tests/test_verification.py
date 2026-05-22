@@ -29,30 +29,30 @@ class TestValidateRemoveCurrencySymbols:
     def test_passes_when_clean(self):
         df = pd.DataFrame({"cost": ["100", "200", "300"]})
         result = _validate_remove_currency_symbols(df, "cost", {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_currency_remains(self):
         df = pd.DataFrame({"cost": ["$100", "200", "$300"]})
         result = _validate_remove_currency_symbols(df, "cost", {})
-        assert result.passed == False
+        assert not result.passed
         assert len(result.remaining_issues) == 2
 
     def test_passes_for_missing_column(self):
         df = pd.DataFrame({"other": [1, 2]})
         result = _validate_remove_currency_symbols(df, "cost", {})
-        assert result.passed == True
+        assert result.passed
 
 
 class TestValidateFreeToZero:
     def test_passes_when_no_free(self):
         df = pd.DataFrame({"cost": [0, 100, 200]})
         result = _validate_free_to_zero(df, "cost", {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_free_remains(self):
         df = pd.DataFrame({"cost": ["Free", 100, "free (comp)"]})
         result = _validate_free_to_zero(df, "cost", {})
-        assert result.passed == False
+        assert not result.passed
         assert len(result.remaining_issues) == 2
 
 
@@ -60,60 +60,60 @@ class TestValidateExtractNumber:
     def test_passes_when_numeric(self):
         df = pd.DataFrame({"val": [1.5, 2.0, 3.5]})
         result = _validate_extract_number(df, "val", {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_mostly_text(self):
         df = pd.DataFrame({"val": ["abc", "def", "ghi", 1.0]})
         result = _validate_extract_number(df, "val", {})
-        assert result.passed == False
+        assert not result.passed
 
 
 class TestValidateConvertNumberWords:
     def test_passes_when_no_words(self):
         df = pd.DataFrame({"count": [1, 5, 20]})
         result = _validate_convert_number_words(df, "count", {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_words_remain(self):
         df = pd.DataFrame({"count": ["one", "two", 3]})
         result = _validate_convert_number_words(df, "count", {})
-        assert result.passed == False
+        assert not result.passed
 
 
 class TestValidateRemoveVagueEntries:
     def test_passes_when_no_vague(self):
         df = pd.DataFrame({"val": ["100", "200", "300"]})
         result = _validate_remove_vague_entries(df, "val", {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_vague_remains(self):
         df = pd.DataFrame({"val": ["n/a", "100", "none"]})
         result = _validate_remove_vague_entries(df, "val", {})
-        assert result.passed == False
+        assert not result.passed
 
 
 class TestValidateStripWhitespace:
     def test_passes_when_clean(self):
         df = pd.DataFrame({"name": ["alice", "bob"]})
         result = _validate_strip_whitespace(df, "name", {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_whitespace_remains(self):
         df = pd.DataFrame({"name": ["  alice  ", "bob"]})
         result = _validate_strip_whitespace(df, "name", {})
-        assert result.passed == False
+        assert not result.passed
 
 
 class TestValidateDeduplicate:
     def test_passes_when_no_duplicates(self):
         df = pd.DataFrame({"a": [1, 2, 3]})
         result = _validate_deduplicate(df, None, {})
-        assert result.passed == True
+        assert result.passed
 
     def test_fails_when_duplicates_remain(self):
         df = pd.DataFrame({"a": [1, 1, 2]})
         result = _validate_deduplicate(df, None, {})
-        assert result.passed == False
+        assert not result.passed
 
 
 # ---------------------------------------------------------------------------
@@ -183,7 +183,7 @@ class TestVerifyCleaningResult:
         # Steps should pass their postconditions
         for step_result in report.step_results:
             if step_result.operation in ("free_to_zero", "remove_currency_symbols", "remove_vague_entries"):
-                assert step_result.passed == True, f"{step_result.operation} should pass"
+                assert step_result.passed, f"{step_result.operation} should pass"
 
     def test_failed_step_included(self):
         """Steps that failed during execution are reported."""
@@ -207,6 +207,6 @@ class TestVerifyCleaningResult:
             failed_steps=failed_steps,
         )
 
-        assert report.overall_passed == False
+        assert not report.overall_passed
         assert len(report.failed_steps) == 1
         assert report.step_results[0].passed is False

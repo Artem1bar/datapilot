@@ -476,7 +476,7 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
 
         # Write results back
         with Session(engine) as session:
-            now = datetime.now(UTC)
+            now = dt.now(UTC)
 
             session.execute(
                 update(Dataset)
@@ -519,7 +519,7 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
                 .values(
                     status="failed",
                     error_text=str(exc),
-                    completed_at=datetime.now(UTC),
+                    completed_at=dt.now(UTC),
                 )
             )
             session.commit()

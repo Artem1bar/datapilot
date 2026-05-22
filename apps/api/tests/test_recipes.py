@@ -253,7 +253,7 @@ class TestApplyRecipe:
         ):
             mock_task.delay.side_effect = RuntimeError("Redis down")
             body = ApplyRecipeRequest(dataset_id=DATASET_ID)
-            result = await apply_recipe(RECIPE_ID, body, USER_A, db)
+            await apply_recipe(RECIPE_ID, body, USER_A, db)
 
         added_job = db.add.call_args[0][0]
         assert added_job.status == "failed"

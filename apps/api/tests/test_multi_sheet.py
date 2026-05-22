@@ -155,7 +155,7 @@ def test_read_single_json() -> None:
 
 
 def test_read_single_parquet() -> None:
-    pyarrow = pytest.importorskip("pyarrow", reason="pyarrow not installed")
+    pytest.importorskip("pyarrow", reason="pyarrow not installed")
     df_orig = pd.DataFrame({"val": [10, 20, 30]})
     buf = io.BytesIO()
     df_orig.to_parquet(buf, index=False, engine="pyarrow")
