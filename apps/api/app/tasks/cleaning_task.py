@@ -238,12 +238,12 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
 
         # --- Verification + remediation loop (max 2 rounds) ---
         # Keep tight to avoid rate limit exhaustion and frontend timeouts.
-        MAX_REMEDIATION_ROUNDS = 2
+        max_remediation_rounds = 2
         all_remediation_steps: list[dict] = []
         agent_assessment = None
 
-        for round_num in range(MAX_REMEDIATION_ROUNDS):
-            round_label = f"Round {round_num + 1}/{MAX_REMEDIATION_ROUNDS}"
+        for round_num in range(max_remediation_rounds):
+            round_label = f"Round {round_num + 1}/{max_remediation_rounds}"
 
             # Progress: spread rounds across 55–85%
             progress_base = 55 + round_num * 6
@@ -366,7 +366,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
             # Loop exhausted without passing — run final verification
             logger.warning(
                 "Remediation loop exhausted after %d rounds without passing",
-                MAX_REMEDIATION_ROUNDS,
+                max_remediation_rounds,
             )
 
         # Final verification snapshot after all remediation

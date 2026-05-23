@@ -81,21 +81,21 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
     """Scan each column for common data-quality problems and return a flags dict."""
     import re as _re
 
-    NUMBER_WORDS = {
+    number_words = {
         "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
         "nine", "ten", "eleven", "twelve", "twenty", "thirty", "forty", "fifty",
         "hundred", "thousand",
     }
-    VAGUE_WORDS = {"n/a", "na", "not much", "very little", "nothing", "none", "unknown"}
+    vague_words = {"n/a", "na", "not much", "very little", "nothing", "none", "unknown"}
 
     # Column-name patterns that signal numeric/cost fields worth cleaning
-    _NUMERIC_PATTERNS = _re.compile(
+    _numeric_patterns = _re.compile(
         r"(exp(end|ense)?|cost|fare|spend|price|amount|total|rate|fee|night|person|group|count|number|nights?|persons?)",
         _re.IGNORECASE,
     )
     # Column-name patterns that signal ID / text / categorical fields → skip numeric cleaning
     # NOTE: use \b word boundaries so "end" doesn't match inside "Expend", "spend", etc.
-    _SKIP_NUMERIC_PATTERNS = _re.compile(
+    _skip_numeric_patterns = _re.compile(
         r"(id$|_id|\bname\b|email|raffle|latitude|longitude|\blat\b|\blon\b|zip|ipaddr|\bip\b|"
         r"\bdate\b|channel|language|country|origin|income|range|\btext\b|events?[0-9_]|"
         r"response.*id|recipient|external|distribution|\bstatus\b|\btype\b|\blocation\b|"
@@ -106,9 +106,9 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
 
     def _is_numeric_col(col_name: str) -> bool:
         """Heuristic: does this column name suggest it should contain numeric values?"""
-        if _SKIP_NUMERIC_PATTERNS.search(col_name):
+        if _skip_numeric_patterns.search(col_name):
             return False
-        return bool(_NUMERIC_PATTERNS.search(col_name))
+        return bool(_numeric_patterns.search(col_name))
 
     def _is_mostly_short(vals: pd.Series) -> bool:  # noqa: F821
         """True if most values are short strings (< 30 chars) — likely amounts, not paragraphs."""
@@ -191,7 +191,7 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
 
         # --- Only flag numeric-cleaning issues on columns that SHOULD be cleaned ---
         # Skip system/metadata columns even if they happen to be numeric dtype
-        is_skip_col = _SKIP_NUMERIC_PATTERNS.search(col)
+        is_skip_col = _skip_numeric_patterns.search(col)
         if (is_numeric_col or pd.api.types.is_numeric_dtype(series)) and not is_skip_col:
 
             # Currency symbols ($, €, £, ¥)
@@ -236,14 +236,14 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
 
         # --- Number words apply to any column (e.g., Under18Group: "One", "Two") ---
         lower_vals = str_vals.str.lower().str.strip()
-        word_mask = lower_vals.isin(NUMBER_WORDS)
+        word_mask = lower_vals.isin(number_words)
         if word_mask.any():
             col_flags["has_number_words"] = True
             col_flags["number_word_examples"] = str_vals[word_mask].head(3).tolist()
 
         # --- Vague values apply to numeric-ish columns only ---
         if is_numeric_col:
-            vague_mask = lower_vals.str.rstrip().isin(VAGUE_WORDS)
+            vague_mask = lower_vals.str.rstrip().isin(vague_words)
             if vague_mask.any():
                 col_flags["has_vague_values"] = True
                 col_flags["vague_examples"] = str_vals[vague_mask].head(3).tolist()

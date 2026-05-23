@@ -1,13 +1,13 @@
 """Pydantic schemas for spreadsheet manipulation."""
 from __future__ import annotations
 
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class ManipulationOpType(str, Enum):
+class ManipulationOpType(StrEnum):
     delete_columns = "delete_columns"
     rename_column = "rename_column"
     sort = "sort"

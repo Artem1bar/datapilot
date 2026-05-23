@@ -95,8 +95,8 @@ def run_verification_agent(
     # Strategy: only send columns that have quality flags (not all 68+ columns).
 
     # Identify columns mentioned in quality flags
-    _META_KEYS = {"qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses"}
-    flagged_cols = {k for k in original_quality_flags if k not in _META_KEYS}
+    _meta_keys = {"qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses"}
+    flagged_cols = {k for k in original_quality_flags if k not in _meta_keys}
 
     # Context columns (first 3 for identification)
     if cleaned_sample_rows:

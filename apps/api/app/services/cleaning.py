@@ -243,10 +243,10 @@ def _filter_sample_rows_to_flagged_columns(
     all_cols = list(sample_rows[0].keys())
 
     # Structural meta-keys to skip (they don't correspond to column names)
-    _META_KEYS = {"qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses"}
+    _meta_keys = {"qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses"}
 
     # Flagged columns (excluding meta keys)
-    flagged = {col for col in data_quality if col not in _META_KEYS and col in all_cols}
+    flagged = {col for col in data_quality if col not in _meta_keys and col in all_cols}
 
     # First few columns as context (dates, IDs, etc.)
     context_cols = all_cols[:max_context_cols]
