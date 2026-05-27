@@ -1,5 +1,7 @@
 # DataPilot
 
+![Tests](https://github.com/Artem1bar/datapilot/actions/workflows/test.yml/badge.svg)
+
 An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parquet file, describe what you want in plain language, and DataPilot's AI agent inspects your data, proposes a cleaning plan, applies it, and lets you export the result.
 
 **Live:** [datapilot-eight.vercel.app](https://datapilot-eight.vercel.app)
