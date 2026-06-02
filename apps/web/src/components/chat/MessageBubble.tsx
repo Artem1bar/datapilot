@@ -44,20 +44,15 @@ const markdownComponents = {
 
 /* ── System message icons ───────────────────────────────────────────────── */
 
-const systemIcons: Record<string, React.ComponentType<{ className?: string }>> = {
-  info: Info,
-  success: CheckCircle2,
-  error: AlertCircle,
-};
-
-function getSystemIcon(content: string) {
-  if (content.toLowerCase().includes("error") || content.toLowerCase().includes("failed")) {
-    return systemIcons.error;
+function getSystemIconElement(content: string, className: string) {
+  const lc = content.toLowerCase();
+  if (lc.includes("error") || lc.includes("failed")) {
+    return <AlertCircle className={className} />;
   }
-  if (content.toLowerCase().includes("complete") || content.toLowerCase().includes("success")) {
-    return systemIcons.success;
+  if (lc.includes("complete") || lc.includes("success")) {
+    return <CheckCircle2 className={className} />;
   }
-  return systemIcons.info;
+  return <Info className={className} />;
 }
 
 /* ── Component ──────────────────────────────────────────────────────────── */
@@ -67,10 +62,9 @@ export function MessageBubble({ message }: MessageBubbleProps) {
 
   // System messages: centered, compact, muted
   if (role === "system") {
-    const Icon = getSystemIcon(content);
     return (
       <div className="flex items-center justify-center gap-2 py-1 text-[12px] text-ink-muted">
-        <Icon className="h-3.5 w-3.5 shrink-0" />
+        {getSystemIconElement(content, "h-3.5 w-3.5 shrink-0")}
         <span>{content}</span>
       </div>
     );
