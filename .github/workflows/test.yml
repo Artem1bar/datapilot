@@ -55,6 +55,9 @@ jobs:
       - name: ESLint
         run: pnpm lint:web
 
+      - name: TypeScript
+        run: cd apps/web && npx tsc --noEmit
+
   test:
     runs-on: ubuntu-latest
     defaults:
