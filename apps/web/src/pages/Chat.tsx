@@ -119,12 +119,36 @@ export default function Chat() {
   /* ── Table paste handler ─────────────────────────────────────────────── */
 
   const handleTablePaste = useCallback(
-    (_text: string) => {
-      // TODO: Convert pasted table text to CSV file and upload
-      const sessionId = activeSessionId ?? createSession();
-      addMessage(sessionId, createMessage("system", "Table paste is coming soon. Please upload a CSV or Excel file."));
+    (text: string) => {
+      // Detect delimiter: TSV (tab-separated from spreadsheet copy) or CSV
+      const firstLine = text.split(/\r?\n/)[0] ?? "";
+      const isTabSeparated = firstLine.includes("\t");
+
+      let csvContent: string;
+      if (isTabSeparated) {
+        // Convert TSV → CSV: quote fields that contain commas or quotes
+        csvContent = text
+          .split(/\r?\n/)
+          .map((row) =>
+            row
+              .split("\t")
+              .map((cell) => {
+                const needsQuote = cell.includes(",") || cell.includes('"') || cell.includes("\n");
+                return needsQuote ? `"${cell.replaceAll('"', '""')}"` : cell;
+              })
+              .join(","),
+          )
+          .join("\n");
+      } else {
+        csvContent = text;
+      }
+
+      const filename = "pasted-table.csv";
+      const blob = new Blob([csvContent], { type: "text/csv" });
+      const file = new File([blob], filename, { type: "text/csv" });
+      void handleFileAttach(file);
     },
-    [activeSessionId, addMessage, createSession],
+    [handleFileAttach],
   );
 
   /* ── Send message / route intent ─────────────────────────────────────── */

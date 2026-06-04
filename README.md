@@ -108,10 +108,21 @@ The app will be available at `http://localhost:5173`.
 
 | Endpoint | Description |
 |----------|-------------|
-| `POST /datasets/upload` | Upload a file and create a dataset |
-| `POST /cleaning/generate-plan/{id}` | Generate an AI cleaning plan |
-| `POST /cleaning/apply/{id}` | Apply a cleaning plan |
+| `POST /datasets/upload` | Upload a CSV/Excel/Parquet file and create a dataset |
+| `GET /datasets/` | List all datasets |
+| `GET /datasets/{id}` | Get dataset metadata |
+| `GET /datasets/{id}/preview` | Preview dataset rows and column stats |
+| `GET /datasets/{id}/schema` | Get inferred column schema |
+| `GET /datasets/{id}/history` | Dataset version history |
+| `POST /cleaning/{id}/plan` | Generate an AI cleaning plan |
+| `POST /cleaning/{id}/apply` | Apply a cleaning plan (async job) |
+| `GET /cleaning/{id}/plan` | Retrieve the current cleaning plan |
+| `GET /cleaning/{job_id}/verification` | Get post-cleaning validation report |
+| `POST /manipulation/{id}/parse` | Preview a data manipulation operation |
+| `POST /manipulation/{id}/apply` | Apply a data manipulation operation |
+| `POST /manipulation/{id}/undo` | Undo the last manipulation |
+| `POST /exports/{id}` | Start an export job (CSV, Excel, Parquet) |
+| `GET /exports/{job_id}/download` | Download the exported file |
+| `GET /datasets/{id}/dictionary` | Auto-generate AI data dictionary |
 | `GET /jobs/{id}` | Poll job status and results |
-| `POST /manipulation/{id}` | Apply data manipulation operations |
-| `GET /exports/{id}` | Download the cleaned file |
-| `WS /ws/{session_id}` | Real-time job progress stream |
+| `WS /ws/jobs/{job_id}` | Real-time job progress stream |
