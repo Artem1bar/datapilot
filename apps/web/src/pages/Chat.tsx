@@ -295,7 +295,8 @@ export default function Chat() {
         createMessage("assistant", "Welcome! Upload a CSV or Excel file to get started. Click the **+** button or drag a file into the chat."),
       );
     }
-  }, [input, sending, activeSessionId, addMessage, createSession]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- runCleaningWorkflow is a stable inner fn; addCharts/setChartPanelOpen are stable Zustand actions
+  }, [input, sending, activeSessionId, addMessage, createSession, addCharts, setChartPanelOpen]);
 
   /* ── Cleaning workflow ───────────────────────────────────────────────── */
 
