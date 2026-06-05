@@ -346,7 +346,7 @@ def generate_cleaning_plan(
     response = client.messages.create(
         model="claude-opus-4-6",
         max_tokens=16384,
-        system=system_prompt,
+        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_message}],
     )
 

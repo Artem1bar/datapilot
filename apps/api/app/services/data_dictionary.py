@@ -76,7 +76,7 @@ def generate_data_dictionary(
 
     try:
         response = client.messages.create(
-            model="claude-haiku-4-5",
+            model="claude-haiku-4-5-20251001",
             max_tokens=4096,
             system=_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": f"Generate a data dictionary for this dataset:\n{context}"}],
