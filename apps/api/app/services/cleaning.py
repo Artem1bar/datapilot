@@ -426,14 +426,18 @@ def _diff_column(
     changes in a way the user should know about.
     """
     entries = []
-    changed_mask = before != after
-    null_appeared = before.isna() & after.notna()
-    null_disappeared = before.notna() & after.isna()
+    # Normalize to object dtype to avoid Arrow/NumPy dtype comparison failures
+    # when before is an ArrowString column and after holds mixed types (e.g. str + int).
+    before_obj = before.astype(object)
+    after_obj = after.astype(object)
+    changed_mask = before_obj != after_obj
+    null_appeared = before_obj.isna() & after_obj.notna()
+    null_disappeared = before_obj.notna() & after_obj.isna()
     mask = changed_mask | null_appeared | null_disappeared
 
-    for idx in before.index[mask]:
-        orig = before.at[idx]
-        new = after.at[idx]
+    for idx in before_obj.index[mask]:
+        orig = before_obj.at[idx]
+        new = after_obj.at[idx]
         # Skip semantic no-ops (e.g. "80" → 80.0)
         if _values_semantically_equal(orig, new):
             continue
