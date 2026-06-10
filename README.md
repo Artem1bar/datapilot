@@ -15,6 +15,7 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 - **Multi-sheet support** — handles Excel workbooks with multiple sheets
 - **Cleaning recipes** — save a cleaning plan as a reusable template and apply it to new datasets in one click
 - **AI data dictionary** — auto-generate a column-level data dictionary with field descriptions, types, and quality notes
+- **Data visualizations** — ask questions in chat and Claude returns charts (bar, line, pie, scatter) rendered live in a slide-out panel
 - **Cleaned dataset library** — all processed datasets are stored and can be re-downloaded at any time
 - **Export** — download cleaned files as CSV, Excel, or Parquet
 - **Real-time progress** — WebSocket-streamed job updates so you see cleaning progress live
