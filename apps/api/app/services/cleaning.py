@@ -342,9 +342,9 @@ def generate_cleaning_plan(
             f"{user_instructions.strip()}\n"
         )
 
-    logger.info("Requesting cleaning plan from Claude (model=claude-opus-4-6, flagged_cols=%d)", len(data_quality))
+    logger.info("Requesting cleaning plan from Claude (model=claude-opus-4-8, flagged_cols=%d)", len(data_quality))
     response = client.messages.create(
-        model="claude-opus-4-6",
+        model="claude-opus-4-8",
         max_tokens=16384,
         system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
         messages=[{"role": "user", "content": user_message}],
