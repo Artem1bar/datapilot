@@ -16,6 +16,16 @@ from app.services.storage import download_file_bytes, upload_file_bytes
 
 logger = logging.getLogger(__name__)
 
+_anthropic_client: anthropic.Anthropic | None = None
+
+
+def _get_client() -> anthropic.Anthropic:
+    """Return a lazily-initialized Anthropic client singleton."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key or None)
+    return _anthropic_client
+
 _SYSTEM_PROMPT = """You are a data manipulation assistant. Given a user command and dataset context (column names, dtypes, sample rows), parse the command into a list of structured operations.
 
 Return ONLY a JSON array of operations. Each operation has:
@@ -82,7 +92,7 @@ def parse_manipulation_intent(
     sample_rows: list[dict],
 ) -> list[dict[str, Any]]:
     """Call Claude to parse a natural language command into structured operations."""
-    client = anthropic.Anthropic(api_key=settings.anthropic_api_key)
+    client = _get_client()
 
     context = (
         f"Dataset columns ({len(column_names)}): {json.dumps(column_names)}\n"
