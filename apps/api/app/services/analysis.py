@@ -16,11 +16,15 @@ logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "analysis_system.txt"
 _SYSTEM_PROMPT: str | None = None
+_anthropic_client: Anthropic | None = None
 
 
 def _get_client() -> Anthropic:
-    """Create a fresh client each call to pick up the latest API key."""
-    return Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    """Return a lazily-initialized Anthropic client singleton."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY or None)
+    return _anthropic_client
 
 
 def _load_system_prompt() -> str:
@@ -82,7 +86,6 @@ def analyze_data(
     """
     system_prompt = _load_system_prompt()
     dataset_context = _build_dataset_context(profile_json, sample_rows)
-    full_system = f"{system_prompt}\n\n{dataset_context}"
 
     # Build messages from history
     messages: list[dict[str, str]] = []
@@ -100,7 +103,10 @@ def analyze_data(
         response = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=4096,
-            system=full_system,
+            system=[
+                {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}},
+                {"type": "text", "text": dataset_context},
+            ],
             messages=messages,
         )
         raw_text = response.content[0].text
