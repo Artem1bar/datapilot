@@ -127,3 +127,11 @@ The app will be available at `http://localhost:5173`.
 | `GET /datasets/{id}/dictionary` | Auto-generate AI data dictionary |
 | `GET /jobs/{id}` | Poll job status and results |
 | `WS /ws/jobs/{job_id}` | Real-time job progress stream |
+| `GET /recipes/` | List saved cleaning recipes |
+| `POST /recipes/` | Save a new cleaning recipe |
+| `GET /recipes/{id}` | Get a specific recipe |
+| `POST /recipes/{id}/apply` | Apply a recipe to a dataset |
+| `DELETE /recipes/{id}` | Delete a recipe |
+| `POST /datasets/{id}/compare/{other_id}` | Compare two dataset versions |
+| `POST /datasets/{id}/chat` | Send a chat message for AI analysis |
+| `GET /datasets/{id}/sessions` | List chat sessions for a dataset |
