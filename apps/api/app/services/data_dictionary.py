@@ -11,6 +11,17 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+_anthropic_client: Anthropic | None = None
+
+
+def _get_client() -> Anthropic:
+    """Return a lazily-initialized Anthropic client singleton."""
+    global _anthropic_client
+    if _anthropic_client is None:
+        _anthropic_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY or None)
+    return _anthropic_client
+
+
 _SYSTEM_PROMPT = """You are a data documentation expert. Given a dataset profile with column names, types, sample values, and statistics, generate a comprehensive data dictionary.
 
 For each column, provide:
@@ -46,7 +57,7 @@ def generate_data_dictionary(
 
     Sync function -- call via asyncio.to_thread().
     """
-    client = Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    client = _get_client()
 
     # Build context
     columns_info = []

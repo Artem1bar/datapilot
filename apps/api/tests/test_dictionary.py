@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import MagicMock, patch
 
+import app.services.data_dictionary as dict_mod
 from app.services.data_dictionary import generate_data_dictionary
 
 # ---------------------------------------------------------------------------
@@ -75,16 +76,24 @@ def _make_response(content: str) -> MagicMock:
     return resp
 
 
+def _mock_client(response: MagicMock | None = None, error: Exception | None = None) -> MagicMock:
+    """Return a mock Anthropic client whose messages.create returns response or raises error."""
+    client = MagicMock()
+    if error is not None:
+        client.messages.create.side_effect = error
+    else:
+        client.messages.create.return_value = response
+    return client
+
+
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------
 
 
 def test_returns_valid_dictionary_json() -> None:
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        mock_cls.return_value.messages.create.return_value = _make_response(
-            json.dumps(VALID_RESPONSE)
-        )
+    client = _mock_client(_make_response(json.dumps(VALID_RESPONSE)))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         result = generate_data_dictionary(PROFILE, SAMPLE_ROWS)
 
     assert "dataset_summary" in result
@@ -95,32 +104,30 @@ def test_returns_valid_dictionary_json() -> None:
 
 def test_strips_markdown_code_fences() -> None:
     fenced = f"```json\n{json.dumps(VALID_RESPONSE)}\n```"
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        mock_cls.return_value.messages.create.return_value = _make_response(fenced)
+    client = _mock_client(_make_response(fenced))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         result = generate_data_dictionary(PROFILE, SAMPLE_ROWS)
 
     assert result["dataset_summary"] == VALID_RESPONSE["dataset_summary"]
 
 
 def test_prompt_includes_column_names() -> None:
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        instance = mock_cls.return_value
-        instance.messages.create.return_value = _make_response(json.dumps(VALID_RESPONSE))
+    client = _mock_client(_make_response(json.dumps(VALID_RESPONSE)))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         generate_data_dictionary(PROFILE, SAMPLE_ROWS)
 
-    call_kwargs = instance.messages.create.call_args
+    call_kwargs = client.messages.create.call_args
     user_content = call_kwargs.kwargs["messages"][0]["content"]
     assert "customer_id" in user_content
     assert "score" in user_content
 
 
 def test_uses_haiku_model() -> None:
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        instance = mock_cls.return_value
-        instance.messages.create.return_value = _make_response(json.dumps(VALID_RESPONSE))
+    client = _mock_client(_make_response(json.dumps(VALID_RESPONSE)))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         generate_data_dictionary(PROFILE, SAMPLE_ROWS)
 
-    model_used = instance.messages.create.call_args.kwargs["model"]
+    model_used = client.messages.create.call_args.kwargs["model"]
     assert "haiku" in model_used
 
 
@@ -130,8 +137,8 @@ def test_uses_haiku_model() -> None:
 
 
 def test_returns_fallback_on_anthropic_error() -> None:
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        mock_cls.return_value.messages.create.side_effect = RuntimeError("API down")
+    client = _mock_client(error=RuntimeError("API down"))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         result = generate_data_dictionary(PROFILE, SAMPLE_ROWS)
 
     assert result["dataset_summary"] == "Failed to generate data dictionary"
@@ -139,18 +146,16 @@ def test_returns_fallback_on_anthropic_error() -> None:
 
 
 def test_returns_fallback_on_invalid_json() -> None:
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        mock_cls.return_value.messages.create.return_value = _make_response("not json {{{")
+    client = _mock_client(_make_response("not json {{{"))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         result = generate_data_dictionary(PROFILE, SAMPLE_ROWS)
 
     assert result["columns"] == []
 
 
 def test_empty_profile_does_not_raise() -> None:
-    with patch("app.services.data_dictionary.Anthropic") as mock_cls:
-        mock_cls.return_value.messages.create.return_value = _make_response(
-            json.dumps({"dataset_summary": "empty", "columns": []})
-        )
+    client = _mock_client(_make_response(json.dumps({"dataset_summary": "empty", "columns": []})))
+    with patch.object(dict_mod, "_get_client", return_value=client):
         result = generate_data_dictionary({}, [])
 
     assert result["columns"] == []
