@@ -59,6 +59,7 @@ jobs:
         run: cd apps/web && npx tsc --noEmit
 
   test:
+    name: Tests (283)
     runs-on: ubuntu-latest
     defaults:
       run:
