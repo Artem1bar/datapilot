@@ -105,6 +105,37 @@ The app will be available at `http://localhost:5173`.
 | `SUPABASE_ANON_KEY` | Supabase anon key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
 
+## Tests
+
+323 unit tests covering all API layers — run from `apps/api/`:
+
+```bash
+cd apps/api
+uv run pytest
+```
+
+| File | What it covers |
+|------|---------------|
+| `test_cleaning_task.py` | AI cleaning plan generation and application (core agent) |
+| `test_cleaning_operations.py` | Null handling, type coercion, deduplication, outlier removal |
+| `test_verification_agent.py` | Post-cleaning validation and quality checks |
+| `test_schema_inference.py` | Column type inference from raw data |
+| `test_manipulation_executor.py` | Filter, rename, pivot, aggregate transformations |
+| `test_analysis.py` | Chat-based AI data analysis and visualization |
+| `test_dictionary.py` | AI data dictionary generation |
+| `test_recipes.py` | Cleaning recipe save, load, and apply |
+| `test_export.py` | CSV/Excel/Parquet export jobs |
+| `test_storage.py` | File storage (upload, download, delete) |
+| `test_comparison.py` | Dataset version comparison |
+| `test_jobs.py` | Job status polling |
+| `test_ws.py` | WebSocket real-time job progress stream |
+| `test_auth.py` | Clerk webhook authentication |
+| `test_multi_sheet.py` | Excel multi-sheet handling |
+| `test_file_validation.py` | Upload format and size validation |
+| `test_outlier_thresholds.py` | Outlier detection boundary conditions |
+| `test_verification.py` | Cleaning verification logic |
+| `test_health.py` | API health endpoint |
+
 ## API Overview
 
 | Endpoint | Description |
