@@ -46,7 +46,7 @@ supabase/               # Auth and DB migrations
 |-------|-----------|
 | Frontend | React 18, Vite, TypeScript, Tailwind CSS, Framer Motion |
 | Backend | Python, FastAPI, SQLAlchemy (async), Alembic |
-| AI | Anthropic Claude (cleaning agent, schema inference, verification) |
+| AI | Anthropic Claude — Opus 4.8 (cleaning plan), Sonnet 4.6 (manipulation, verification), Haiku 4.5 (analysis, dictionary) |
 | Auth | Supabase Auth / Clerk |
 | Storage | MinIO / Cloudflare R2 (file storage) |
 | Database | PostgreSQL |
