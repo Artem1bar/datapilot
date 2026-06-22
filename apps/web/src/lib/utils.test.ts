@@ -15,7 +15,7 @@ describe("cn", () => {
   });
 
   it("drops falsy values", () => {
-    expect(cn("foo", false && "bar", undefined, null, "baz")).toBe("foo baz");
+    expect(cn("foo", false, undefined, null, "baz")).toBe("foo baz");
   });
 
   it("handles object syntax", () => {
