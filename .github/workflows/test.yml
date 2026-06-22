@@ -58,8 +58,32 @@ jobs:
       - name: TypeScript
         run: cd apps/web && npx tsc --noEmit
 
+  test-frontend:
+    name: Tests (Frontend)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Run frontend tests
+        run: pnpm test:web
+
   test:
-    name: Tests (323)
+    name: Tests (Backend 323)
     runs-on: ubuntu-latest
     defaults:
       run:

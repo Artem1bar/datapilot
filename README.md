@@ -107,7 +107,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-323 unit tests covering all API layers — run from `apps/api/`:
+**366 tests total** (323 backend + 43 frontend).
+
+### Backend (323 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -135,6 +137,19 @@ uv run pytest
 | `test_outlier_thresholds.py` | Outlier detection boundary conditions |
 | `test_verification.py` | Cleaning verification logic |
 | `test_health.py` | API health endpoint |
+
+### Frontend (43 tests) — run from `apps/web/`
+
+```bash
+cd apps/web
+pnpm test
+```
+
+| File | What it covers |
+|------|---------------|
+| `src/lib/utils.test.ts` | `cn()` Tailwind class-merge utility |
+| `src/stores/app-store.test.ts` | Sidebar, chart panel, chart list, and theme state |
+| `src/stores/session-store.test.ts` | Session CRUD, messages, workflow step transitions |
 
 ## API Overview
 
