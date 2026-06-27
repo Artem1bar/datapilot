@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import UTC, datetime, timezone
-
-import pytest
+from datetime import UTC, datetime
 
 from app.services.history import create_history_entry
 
