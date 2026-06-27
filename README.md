@@ -107,9 +107,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**366 tests total** (323 backend + 43 frontend).
+**376 tests total** (333 backend + 43 frontend).
 
-### Backend (323 tests) — run from `apps/api/`
+### Backend (333 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -137,6 +137,7 @@ uv run pytest
 | `test_outlier_thresholds.py` | Outlier detection boundary conditions |
 | `test_verification.py` | Cleaning verification logic |
 | `test_health.py` | API health endpoint |
+| `test_history.py` | History entry creation, UUID uniqueness, metadata isolation |
 
 ### Frontend (43 tests) — run from `apps/web/`
 

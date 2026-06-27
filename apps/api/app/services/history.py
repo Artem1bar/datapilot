@@ -23,6 +23,6 @@ def create_history_entry(
         "operation_type": operation_type,
         "description": description,
         "snapshot_key": snapshot_key,
-        "metadata": metadata or {},
+        "metadata": dict(metadata) if metadata else {},
         "created_at": datetime.now(UTC).isoformat(),
     }
