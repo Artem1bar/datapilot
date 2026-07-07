@@ -54,6 +54,10 @@ class Settings(BaseSettings):
     # Uploads — reject files larger than this (bytes). Default 50 MB.
     MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024
 
+    # AI cost controls
+    AI_ENABLED: bool = True  # kill-switch: false → all AI endpoints return 503
+    AI_DAILY_CALL_BUDGET: int = 200  # max AI calls per user per rolling 24h
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:5174"
 

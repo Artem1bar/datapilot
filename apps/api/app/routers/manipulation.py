@@ -52,8 +52,9 @@ async def parse_command(
     db: DBSession,
 ) -> ManipulationPreview:
     """Parse a natural language command into structured operations and return a preview."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
 
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(
         str(user.id), action="manipulation_parse", max_calls=30, window_seconds=3600
     )

@@ -28,8 +28,9 @@ async def get_data_dictionary(
     db: DBSession,
 ) -> dict:
     """Generate an AI-powered data dictionary for a dataset."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
 
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(
         str(user.id), action="data_dictionary", max_calls=20, window_seconds=3600
     )

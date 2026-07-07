@@ -48,8 +48,9 @@ async def chat(
     db: DBSession,
 ) -> ChatSessionResponse:
     """Send a natural-language question about a dataset."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
 
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(str(user.id), action="analysis_chat", max_calls=30, window_seconds=3600)
 
     result = await db.execute(

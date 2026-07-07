@@ -68,7 +68,11 @@ async def check_rate_limit(
     if current_count >= max_calls:
         logger.warning(
             "Rate limit exceeded for user %s on action %s: %d/%d in %ds",
-            user_id, action, current_count, max_calls, window_seconds,
+            user_id,
+            action,
+            current_count,
+            max_calls,
+            window_seconds,
         )
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -80,3 +84,23 @@ async def check_rate_limit(
     pipe2.zadd(key, {str(now): now})
     pipe2.expire(key, window_seconds + 60)
     await pipe2.execute()
+
+
+async def enforce_ai_budget(user_id: str) -> None:
+    """Kill-switch + per-user daily budget shared across all AI endpoints.
+
+    Raises:
+        HTTPException(503) if AI features are disabled globally.
+        HTTPException(429) if the user's daily AI budget is exhausted.
+    """
+    if not settings.AI_ENABLED:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI features are temporarily disabled.",
+        )
+    await check_rate_limit(
+        user_id,
+        action="ai_daily",
+        max_calls=settings.AI_DAILY_CALL_BUDGET,
+        window_seconds=86_400,
+    )

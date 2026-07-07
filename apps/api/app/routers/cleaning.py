@@ -97,8 +97,9 @@ async def create_cleaning_plan(
     body: GeneratePlanRequest | None = None,
 ) -> JobResponse:
     """Generate a cleaning plan for a dataset using AI."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
 
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(str(user.id), action="cleaning_plan", max_calls=20, window_seconds=3600)
 
     dataset = await _get_dataset_or_404(dataset_id, user.id, db)
@@ -239,8 +240,9 @@ async def apply_cleaning_plan(
     db: DBSession,
 ) -> JobResponse:
     """Apply cleaning steps to a dataset (dispatches a background task)."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
 
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(str(user.id), action="cleaning_apply", max_calls=30, window_seconds=3600)
 
     dataset = await _get_dataset_or_404(dataset_id, user.id, db)

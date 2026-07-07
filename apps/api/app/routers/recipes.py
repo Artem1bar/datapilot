@@ -146,8 +146,9 @@ async def apply_recipe(
     db: DBSession,
 ) -> dict:
     """Apply a saved recipe to a dataset — creates a new cleaning job."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
 
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(str(user.id), action="recipe_apply", max_calls=30, window_seconds=3600)
 
     # Get recipe
