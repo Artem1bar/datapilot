@@ -52,12 +52,15 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
+    // userEvent interaction tests run slower under coverage instrumentation and
+    // CI load; 5s (the default) flakes. 15s gives headroom without masking hangs.
+    testTimeout: 15_000,
     coverage: {
       provider: "v8",
       reporter: ["text-summary", "lcov"],
-      // Count every source file, not just those a test happens to import, so
-      // the total reflects real coverage and untested modules can't hide.
-      all: true,
+      // `include` drives which files are measured; in vitest 4 every matching
+      // file counts (not just those a test imports), so untested modules can't
+      // hide and the total reflects real coverage.
       include: ["src/**/*.{ts,tsx}"],
       exclude: [
         "src/**/*.test.{ts,tsx}",

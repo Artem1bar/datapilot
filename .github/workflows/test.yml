@@ -55,8 +55,11 @@ jobs:
       - name: ESLint
         run: pnpm lint:web
 
-      - name: TypeScript
-        run: cd apps/web && npx tsc --noEmit
+      # Full production build, not `tsc --noEmit`: the app tsconfig excludes
+      # config files (e.g. vite.config.ts), so only `tsc -b` inside the build
+      # catches type errors there — and it also verifies bundling.
+      - name: Typecheck and build
+        run: pnpm build:web
 
   test-frontend:
     name: Tests (Frontend)
