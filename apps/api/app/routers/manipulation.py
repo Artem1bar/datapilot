@@ -27,7 +27,7 @@ from app.services.manipulation import (
 )
 from app.services.manipulation_executor import ManipulationError as ExecError
 from app.services.storage import download_file_bytes, upload_file_bytes
-from app.utils.dataframe import read_dataframe
+from app.utils.dataframe import read_dataframe, to_sample_records
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ async def parse_command(
 
     column_names = list(df.columns)
     dtypes = {col: str(df[col].dtype) for col in df.columns}
-    sample_rows = df.head(5).fillna("").to_dict(orient="records")
+    sample_rows = to_sample_records(df.head(5))
 
     # Parse the command using AI
     try:

@@ -1,4 +1,5 @@
 """Data dictionary endpoints."""
+
 from __future__ import annotations
 
 import asyncio
@@ -14,6 +15,7 @@ from app.deps import CurrentUser, DBSession
 from app.models.dataset import Dataset
 from app.services.data_dictionary import generate_data_dictionary
 from app.services.storage import download_file_bytes
+from app.utils.dataframe import to_sample_records
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["dictionary"])
@@ -33,7 +35,9 @@ async def get_data_dictionary(
     if dataset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
     if not dataset.profile_json:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset not profiled yet")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Dataset not profiled yet"
+        )
 
     file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
     lower = dataset.filename.lower()
@@ -44,9 +48,11 @@ async def get_data_dictionary(
         df = df.head(10)
     else:
         df = pd.read_csv(io.BytesIO(file_bytes), nrows=10)
-    sample_rows = df.fillna("").to_dict(orient="records")
+    sample_rows = to_sample_records(df)
 
     dictionary = await asyncio.to_thread(
-        generate_data_dictionary, dataset.profile_json, sample_rows,
+        generate_data_dictionary,
+        dataset.profile_json,
+        sample_rows,
     )
     return dictionary
