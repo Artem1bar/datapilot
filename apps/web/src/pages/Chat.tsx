@@ -6,6 +6,8 @@ import { ChatStream } from "@/components/chat/ChatStream";
 import { InputBar } from "@/components/chat/InputBar";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { api } from "@/lib/api";
+import { detectIntent, intentRequiresData } from "@/lib/intent";
+import { progressStageLabel } from "@/lib/progress";
 import type {
   DatasetResponse,
   JobResponse,
@@ -171,14 +173,13 @@ export default function Chat() {
     const session = sessions.find((s) => s.id === sessionId);
     const datasetId = session?.datasetId;
 
-    // Route by intent
-    const lowerText = text.toLowerCase();
-    const isCleanIntent = lowerText.includes("clean") || lowerText === "clean my dataset";
-    const isAnalyzeIntent = lowerText.includes("analyze") || lowerText.includes("analyse") || lowerText === "analyze my data";
-    const isReportIntent = lowerText.includes("report") || lowerText === "create a report";
-    const isManipulationIntent = /\b(delete|remove|drop|rename|sort|filter|add column|merge|format|move column|split|reorder|restructure)\b/i.test(lowerText);
+    // Route by intent (classification + tests live in lib/intent.ts)
+    const intent = detectIntent(text);
+    const isCleanIntent = intent === "clean";
+    const isAnalyzeIntent = intent === "analyze";
+    const isManipulationIntent = intent === "manipulate";
 
-    if (!datasetId && (isCleanIntent || isAnalyzeIntent || isReportIntent || isManipulationIntent)) {
+    if (!datasetId && intentRequiresData(intent)) {
       addMessage(
         sessionId,
         createMessage("assistant", "I need some data to work with. Please attach a CSV or Excel file using the **+** button, then try again."),
@@ -716,12 +717,4 @@ async function pollJob(
     onProgress?.(job.progress ?? 0);
   }
   throw new Error("Job timed out");
-}
-
-/** Human-readable stage label for a cleaning job's backend progress value. */
-function progressStageLabel(progress: number): string {
-  if (progress < 20) return "Preparing data...";
-  if (progress < 55) return "Applying cleaning steps...";
-  if (progress < 80) return "Verifying results & fixing issues...";
-  return "Finalizing cleaned file...";
 }

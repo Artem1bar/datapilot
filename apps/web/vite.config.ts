@@ -72,10 +72,10 @@ export default defineConfig({
       // dark areas (Chat routing, hooks) get tests. Not aspirational: CI fails
       // below these.
       thresholds: {
-        statements: 13,
-        branches: 10,
-        functions: 18,
-        lines: 13,
+        statements: 15,
+        branches: 12,
+        functions: 20,
+        lines: 15,
       },
     },
   },
