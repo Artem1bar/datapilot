@@ -499,7 +499,7 @@ export default function Chat() {
   /* ── Card actions ────────────────────────────────────────────────────── */
 
   const handleCardAction = useCallback(
-    async (action: string, data?: unknown) => {
+    async (action: string, data?: unknown, ownerSessionId?: string) => {
       if (action === "download" && typeof data === "string") {
         // Use an anchor click so the browser triggers a proper file download
         // (the URL now streams the file directly — no JSON redirect needed)
@@ -511,14 +511,14 @@ export default function Chat() {
         document.body.removeChild(a);
       }
       if (action === "analyze" && typeof data === "string") {
-        const sessionId = activeSessionId;
+        const sessionId = ownerSessionId ?? activeSessionId;
         if (sessionId) {
           setInput("Analyze my data");
         }
       }
 
       if (action === "apply_cleaning" && data) {
-        const sessionId = activeSessionId;
+        const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
         const { datasetId, steps } = data as { datasetId?: string; steps?: CleaningStep[] };
         if (!datasetId || !steps?.length) return;
@@ -526,7 +526,7 @@ export default function Chat() {
       }
 
       if (action === "apply_manipulation" && data) {
-        const sessionId = activeSessionId;
+        const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
         const sessions = useSessionStore.getState().sessions;
         const session = sessions.find((s) => s.id === sessionId);
@@ -577,14 +577,14 @@ export default function Chat() {
       }
 
       if (action === "cancel_manipulation") {
-        const sessionId = activeSessionId;
+        const sessionId = ownerSessionId ?? activeSessionId;
         if (sessionId) {
           addMessage(sessionId, createMessage("system", "Edit cancelled."));
         }
       }
 
       if (action === "undo_manipulation" && typeof data === "string") {
-        const sessionId = activeSessionId;
+        const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
         const sessions = useSessionStore.getState().sessions;
         const session = sessions.find((s) => s.id === sessionId);
@@ -650,6 +650,7 @@ export default function Chat() {
       {/* Chat stream */}
       <ChatStream
         messages={messages}
+        sessionId={activeSessionId}
         sending={sending}
         onChipClick={handleChipClick}
         onCardAction={handleCardAction}
