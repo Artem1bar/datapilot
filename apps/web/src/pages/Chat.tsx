@@ -8,6 +8,7 @@ import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { api } from "@/lib/api";
 import { detectIntent, intentRequiresData } from "@/lib/intent";
 import { progressStageLabel } from "@/lib/progress";
+import { validateUploadFile } from "@/lib/upload";
 import type {
   DatasetResponse,
   JobResponse,
@@ -78,6 +79,13 @@ export default function Chat() {
       let sessionId = activeSessionId;
       if (!sessionId) {
         sessionId = createSession(file.name);
+      }
+
+      // Reject oversize / wrong-type files before the round-trip to the server.
+      const validation = validateUploadFile(file);
+      if (!validation.ok) {
+        addMessage(sessionId, createMessage("system", validation.reason));
+        return;
       }
 
       setSending(true);

@@ -16,8 +16,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ACCEPTED_EXTENSIONS, MAX_UPLOAD_LABEL } from "@/lib/upload";
 
-const ACCEPTED_TYPES = ".csv,.xls,.xlsx";
+// Single source for accepted types (shared with the client-side validator).
+const ACCEPTED_TYPES = ACCEPTED_EXTENSIONS.join(",");
 
 interface AttachMenuProps {
   onFileAttach: (file: File) => void;
@@ -71,7 +73,10 @@ export function AttachMenu({ onFileAttach, onTablePaste, disabled }: AttachMenuP
         <DropdownMenuContent align="start" className="w-48">
           <DropdownMenuItem onClick={() => fileInputRef.current?.click()}>
             <Upload className="mr-2 h-4 w-4" />
-            Upload CSV or Excel
+            <span className="flex flex-col">
+              <span>Upload CSV or Excel</span>
+              <span className="text-[11px] text-ink-tertiary">Up to {MAX_UPLOAD_LABEL}</span>
+            </span>
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setPasteOpen(true)}>
             <ClipboardPaste className="mr-2 h-4 w-4" />
