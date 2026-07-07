@@ -15,8 +15,8 @@ from datetime import datetime as dt
 import numpy as np
 import pandas as pd
 from sqlalchemy import select, update
+from sqlalchemy.exc import NoResultFound
 
-from app.config import settings
 from app.services.storage import download_file_bytes
 from app.tasks.celery_app import celery_app
 
@@ -37,44 +37,26 @@ def _to_python(obj):
         return [_to_python(v) for v in obj.tolist()]
     if isinstance(obj, (dt, date)):
         return obj.isoformat()
-    if hasattr(obj, 'item'):  # catches remaining numpy scalars
+    if hasattr(obj, "item"):  # catches remaining numpy scalars
         return obj.item()
     return obj
+
 
 logger = logging.getLogger(__name__)
 
 
 def _get_sync_engine():
-    """Create a synchronous SQLAlchemy engine for use inside Celery workers."""
-    from sqlalchemy import create_engine
+    """Return the shared per-process sync engine (see app.tasks._db)."""
+    from app.tasks._db import get_sync_engine
 
-    # If the URL uses asyncpg, swap it; otherwise use as-is
-    if "asyncpg" in settings.DATABASE_URL:
-        sync_url = settings.DATABASE_URL.replace("asyncpg", "psycopg2")
-    else:
-        sync_url = settings.DATABASE_URL
-    return create_engine(sync_url)
+    return get_sync_engine()
 
 
 def _publish_progress_sync(job_id: str, status: str, progress: int, message: str = "") -> None:
-    """Publish job progress via Redis (synchronous)."""
-    import json
+    """Report job progress (persists to the Job row + Redis pub/sub)."""
+    from app.tasks._progress import publish_progress_sync
 
-    import redis
-
-    try:
-        r = redis.from_url(settings.REDIS_URL)
-        payload = json.dumps({
-            "job_id": job_id,
-            "status": status,
-            "progress": progress,
-            "message": message,
-            "result": None,
-        })
-        r.publish(f"job:{job_id}:progress", payload)
-        r.close()
-    except Exception as exc:
-        logger.warning("Progress publish failed (non-fatal): %s", exc)
+    publish_progress_sync(job_id, status, progress, message)
 
 
 def detect_quality_issues(df: pd.DataFrame) -> dict:
@@ -82,9 +64,25 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
     import re as _re
 
     number_words = {
-        "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-        "nine", "ten", "eleven", "twelve", "twenty", "thirty", "forty", "fifty",
-        "hundred", "thousand",
+        "zero",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+        "seven",
+        "eight",
+        "nine",
+        "ten",
+        "eleven",
+        "twelve",
+        "twenty",
+        "thirty",
+        "forty",
+        "fifty",
+        "hundred",
+        "thousand",
     }
     vague_words = {"n/a", "na", "not much", "very little", "nothing", "none", "unknown"}
 
@@ -118,8 +116,7 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
 
     # ── Non-breaking spaces / trailing whitespace in column names ──
     dirty_col_names = [
-        col for col in df.columns
-        if col != col.strip() or "\xa0" in str(col) or "  " in str(col)
+        col for col in df.columns if col != col.strip() or "\xa0" in str(col) or "  " in str(col)
     ]
     if dirty_col_names:
         flags["_dirty_column_names"] = {
@@ -168,10 +165,7 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
     # Qualtrics survey-export detection: first data row contains full question text
     if len(df) > 0:
         first = df.iloc[0]
-        long_str_count = sum(
-            1 for v in first
-            if isinstance(v, str) and len(v) > 40
-        )
+        long_str_count = sum(1 for v in first if isinstance(v, str) and len(v) > 40)
         if long_str_count >= max(3, len(df.columns) * 0.25):
             flags["qualtrics_header_row"] = {
                 "row_index": 0,
@@ -193,7 +187,6 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
         # Skip system/metadata columns even if they happen to be numeric dtype
         is_skip_col = _skip_numeric_patterns.search(col)
         if (is_numeric_col or pd.api.types.is_numeric_dtype(series)) and not is_skip_col:
-
             # Currency symbols ($, €, £, ¥)
             currency_mask = str_vals.str.contains(r"[\$€£¥]", regex=True, na=False)
             if currency_mask.any() and _is_mostly_short(str_vals):
@@ -257,11 +250,12 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
 def generate_smart_suggestions(df: pd.DataFrame, profile: dict) -> dict:
     """Generate smart suggestions for column operations."""
     import re
+
     suggestions = {
-        "drop_candidates": [],      # columns that should be dropped
-        "type_conversions": [],     # columns that need type changes
-        "standardization": [],      # columns with inconsistent values
-        "pii_detected": [],         # columns that may contain PII
+        "drop_candidates": [],  # columns that should be dropped
+        "type_conversions": [],  # columns that need type changes
+        "standardization": [],  # columns with inconsistent values
+        "pii_detected": [],  # columns that may contain PII
     }
 
     for col in df.columns:
@@ -270,17 +264,21 @@ def generate_smart_suggestions(df: pd.DataFrame, profile: dict) -> dict:
 
         # Drop candidates: 100% null, all same value, or system ID columns
         if col_profile.get("null_pct", 0) == 100:
-            suggestions["drop_candidates"].append({
-                "column": col, "reason": "100% null values", "confidence": 1.0
-            })
+            suggestions["drop_candidates"].append(
+                {"column": col, "reason": "100% null values", "confidence": 1.0}
+            )
         elif col_profile.get("unique_count", 0) == 1 and len(series.dropna()) > 1:
-            suggestions["drop_candidates"].append({
-                "column": col, "reason": "Constant value (all identical)", "confidence": 0.9
-            })
-        elif re.match(r"^(id|_id|.*_id|response_?id|recipient_?id|external_?ref|ip_?addr|ip_?address)$", col, re.I):
-            suggestions["drop_candidates"].append({
-                "column": col, "reason": "System/metadata ID column", "confidence": 0.7
-            })
+            suggestions["drop_candidates"].append(
+                {"column": col, "reason": "Constant value (all identical)", "confidence": 0.9}
+            )
+        elif re.match(
+            r"^(id|_id|.*_id|response_?id|recipient_?id|external_?ref|ip_?addr|ip_?address)$",
+            col,
+            re.I,
+        ):
+            suggestions["drop_candidates"].append(
+                {"column": col, "reason": "System/metadata ID column", "confidence": 0.7}
+            )
 
         # Type conversions: strings that look like dates or numbers
         if pd.api.types.is_object_dtype(series) or pd.api.types.is_string_dtype(series):
@@ -298,23 +296,29 @@ def generate_smart_suggestions(df: pd.DataFrame, profile: dict) -> dict:
                 except (ValueError, TypeError):
                     pass
             if date_count > len(sample) * 0.8:
-                suggestions["type_conversions"].append({
-                    "column": col, "current_type": str(series.dtype),
-                    "suggested_type": "datetime",
-                    "examples": non_null.head(3).tolist(),
-                    "confidence": round(date_count / len(sample), 2),
-                })
+                suggestions["type_conversions"].append(
+                    {
+                        "column": col,
+                        "current_type": str(series.dtype),
+                        "suggested_type": "datetime",
+                        "examples": non_null.head(3).tolist(),
+                        "confidence": round(date_count / len(sample), 2),
+                    }
+                )
                 continue
 
             # Check for number-like strings
             numeric_count = pd.to_numeric(non_null.head(50), errors="coerce").notna().sum()
             if numeric_count > len(sample) * 0.8:
-                suggestions["type_conversions"].append({
-                    "column": col, "current_type": str(series.dtype),
-                    "suggested_type": "numeric",
-                    "examples": non_null.head(3).tolist(),
-                    "confidence": round(numeric_count / len(sample), 2),
-                })
+                suggestions["type_conversions"].append(
+                    {
+                        "column": col,
+                        "current_type": str(series.dtype),
+                        "suggested_type": "numeric",
+                        "examples": non_null.head(3).tolist(),
+                        "confidence": round(numeric_count / len(sample), 2),
+                    }
+                )
                 continue
 
             # Standardization: check for variant values
@@ -330,11 +334,13 @@ def generate_smart_suggestions(df: pd.DataFrame, profile: dict) -> dict:
                         groups[key].append(val)
                     variants = {k: v for k, v in groups.items() if len(v) > 1}
                     if variants:
-                        suggestions["standardization"].append({
-                            "column": col,
-                            "variants": dict(list(variants.items())[:5]),
-                            "unique_count": col_profile.get("unique_count", 0),
-                        })
+                        suggestions["standardization"].append(
+                            {
+                                "column": col,
+                                "variants": dict(list(variants.items())[:5]),
+                                "unique_count": col_profile.get("unique_count", 0),
+                            }
+                        )
 
             # PII detection
             pii_patterns = {
@@ -347,10 +353,13 @@ def generate_smart_suggestions(df: pd.DataFrame, profile: dict) -> dict:
             for pii_type, pattern in pii_patterns.items():
                 matches = text_sample.str.match(pattern, na=False).sum()
                 if matches > len(text_sample) * 0.5:
-                    suggestions["pii_detected"].append({
-                        "column": col, "pii_type": pii_type,
-                        "match_pct": round(matches / len(text_sample) * 100, 1),
-                    })
+                    suggestions["pii_detected"].append(
+                        {
+                            "column": col,
+                            "pii_type": pii_type,
+                            "match_pct": round(matches / len(text_sample) * 100, 1),
+                        }
+                    )
                     break
 
     return suggestions
@@ -375,20 +384,20 @@ def _compute_profile(df: pd.DataFrame) -> dict:
 
         if pd.api.types.is_numeric_dtype(series):
             desc = series.describe()
-            col_info.update({
-                "mean": round(float(desc.get("mean", 0)), 4),
-                "std": round(float(desc.get("std", 0)), 4),
-                "min": float(desc.get("min", 0)),
-                "max": float(desc.get("max", 0)),
-                "median": round(float(series.median()), 4),
-                "q25": float(desc.get("25%", 0)),
-                "q75": float(desc.get("75%", 0)),
-            })
+            col_info.update(
+                {
+                    "mean": round(float(desc.get("mean", 0)), 4),
+                    "std": round(float(desc.get("std", 0)), 4),
+                    "min": float(desc.get("min", 0)),
+                    "max": float(desc.get("max", 0)),
+                    "median": round(float(series.median()), 4),
+                    "q25": float(desc.get("25%", 0)),
+                    "q75": float(desc.get("75%", 0)),
+                }
+            )
         elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
             top_values = series.value_counts().head(10)
-            col_info["top_values"] = {
-                str(k): int(v) for k, v in top_values.items()
-            }
+            col_info["top_values"] = {str(k): int(v) for k, v in top_values.items()}
             lengths = series.dropna().astype(str).str.len()
             if len(lengths) > 0:
                 col_info["avg_length"] = round(float(lengths.mean()), 2)
@@ -507,6 +516,15 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
 
     except Exception as exc:
         logger.exception("Failed to profile dataset %s", dataset_id)
+
+        non_retryable = isinstance(exc, (ValueError, TypeError, KeyError, NoResultFound))
+        retries_exhausted = (self.request.retries or 0) >= self.max_retries
+        if not (non_retryable or retries_exhausted):
+            # Transient failure with retries left: keep job/dataset state
+            # non-terminal so clients don't see a failure that may still succeed.
+            _publish_progress_sync(job_id, "running", 0, f"Transient error — retrying: {exc}")
+            raise self.retry(exc=exc, countdown=30)
+
         _publish_progress_sync(job_id, "failed", 0, str(exc))
 
         with Session(engine) as session:
@@ -524,4 +542,4 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
             )
             session.commit()
 
-        raise self.retry(exc=exc, countdown=30)
+        raise

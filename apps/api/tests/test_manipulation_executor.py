@@ -124,27 +124,39 @@ class TestFilterRows:
         assert all(result["age"] > 28)
 
     def test_equals(self, sample_df: pd.DataFrame) -> None:
-        result = execute_filter_rows(sample_df, {"column": "name", "operator": "==", "value": "Bob"})
+        result = execute_filter_rows(
+            sample_df, {"column": "name", "operator": "==", "value": "Bob"}
+        )
         assert all(result["name"] == "Bob")
 
     def test_not_equals(self, sample_df: pd.DataFrame) -> None:
-        result = execute_filter_rows(sample_df, {"column": "name", "operator": "!=", "value": "Bob"})
+        result = execute_filter_rows(
+            sample_df, {"column": "name", "operator": "!=", "value": "Bob"}
+        )
         assert "Bob" not in result["name"].values
 
     def test_contains(self, sample_df: pd.DataFrame) -> None:
-        result = execute_filter_rows(sample_df, {"column": "name", "operator": "contains", "value": "li"})
+        result = execute_filter_rows(
+            sample_df, {"column": "name", "operator": "contains", "value": "li"}
+        )
         assert all("li" in n.lower() for n in result["name"])
 
     def test_not_contains(self, sample_df: pd.DataFrame) -> None:
-        result = execute_filter_rows(sample_df, {"column": "name", "operator": "not_contains", "value": "Bob"})
+        result = execute_filter_rows(
+            sample_df, {"column": "name", "operator": "not_contains", "value": "Bob"}
+        )
         assert "Bob" not in result["name"].values
 
     def test_is_null(self, sample_df: pd.DataFrame) -> None:
-        result = execute_filter_rows(sample_df, {"column": "city", "operator": "is_null", "value": None})
+        result = execute_filter_rows(
+            sample_df, {"column": "city", "operator": "is_null", "value": None}
+        )
         assert result["city"].isna().all()
 
     def test_is_not_null(self, sample_df: pd.DataFrame) -> None:
-        result = execute_filter_rows(sample_df, {"column": "city", "operator": "is_not_null", "value": None})
+        result = execute_filter_rows(
+            sample_df, {"column": "city", "operator": "is_not_null", "value": None}
+        )
         assert not result["city"].isna().any()
 
     def test_unknown_operator_raises(self, sample_df: pd.DataFrame) -> None:
@@ -176,7 +188,12 @@ class TestAddColumn:
     def test_add_with_source_columns_concat(self, sample_df: pd.DataFrame) -> None:
         result = execute_add_column(
             sample_df,
-            {"name": "label", "source_columns": ["name", "city"], "operation": "concat", "separator": "-"},
+            {
+                "name": "label",
+                "source_columns": ["name", "city"],
+                "operation": "concat",
+                "separator": "-",
+            },
         )
         assert result["label"].iloc[0] == "Alice-NY"
 
@@ -202,18 +219,27 @@ class TestMergeColumns:
     def test_drops_originals(self, sample_df: pd.DataFrame) -> None:
         result = execute_merge_columns(
             sample_df,
-            {"columns": ["name", "city"], "separator": "_", "new_name": "nc", "drop_originals": True},
+            {
+                "columns": ["name", "city"],
+                "separator": "_",
+                "new_name": "nc",
+                "drop_originals": True,
+            },
         )
         assert "name" not in result.columns
         assert "city" not in result.columns
 
     def test_fewer_than_two_columns_raises(self, sample_df: pd.DataFrame) -> None:
         with pytest.raises(ManipulationError, match="At least 2"):
-            execute_merge_columns(sample_df, {"columns": ["name"], "separator": "_", "new_name": "x"})
+            execute_merge_columns(
+                sample_df, {"columns": ["name"], "separator": "_", "new_name": "x"}
+            )
 
     def test_no_new_name_raises(self, sample_df: pd.DataFrame) -> None:
         with pytest.raises(ManipulationError, match="required"):
-            execute_merge_columns(sample_df, {"columns": ["name", "city"], "separator": "_", "new_name": ""})
+            execute_merge_columns(
+                sample_df, {"columns": ["name", "city"], "separator": "_", "new_name": ""}
+            )
 
 
 # ── execute_format_column ─────────────────────────────────────────────────────
@@ -300,7 +326,12 @@ class TestSplitColumn:
         df = pd.DataFrame({"full_name": ["Alice Smith"]})
         result = execute_split_column(
             df,
-            {"column": "full_name", "delimiter": " ", "new_names": ["first", "last"], "drop_original": True},
+            {
+                "column": "full_name",
+                "delimiter": " ",
+                "new_names": ["first", "last"],
+                "drop_original": True,
+            },
         )
         assert "full_name" not in result.columns
 
@@ -351,6 +382,16 @@ class TestFillNulls:
         with pytest.raises(ManipulationError, match="required"):
             execute_fill_nulls(sample_df, {"column": "city"})
 
+    def test_fill_forward(self) -> None:
+        df = pd.DataFrame({"val": [1.0, None, None, 4.0]})
+        result = execute_fill_nulls(df, {"column": "val", "method": "ffill"})
+        assert result["val"].tolist() == [1.0, 1.0, 1.0, 4.0]
+
+    def test_fill_backward(self) -> None:
+        df = pd.DataFrame({"val": [None, 2.0, None, 4.0]})
+        result = execute_fill_nulls(df, {"column": "val", "method": "bfill"})
+        assert result["val"].tolist() == [2.0, 2.0, 4.0, 4.0]
+
 
 # ── execute_cast_type ─────────────────────────────────────────────────────────
 
@@ -377,6 +418,12 @@ class TestCastType:
     def test_unknown_dtype_raises(self, sample_df: pd.DataFrame) -> None:
         with pytest.raises(ManipulationError, match="Unknown dtype"):
             execute_cast_type(sample_df, {"column": "age", "dtype": "uuid"})
+
+    def test_cast_to_string_preserves_nulls(self, sample_df: pd.DataFrame) -> None:
+        result = execute_cast_type(sample_df, {"column": "city", "dtype": "string"})
+        assert result["city"].isna().sum() == 1
+        assert "nan" not in result["city"].dropna().tolist()
+        assert "None" not in result["city"].dropna().tolist()
 
 
 # ── execute_reorder_columns ───────────────────────────────────────────────────

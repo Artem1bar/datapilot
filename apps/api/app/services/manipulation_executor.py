@@ -3,6 +3,7 @@
 Each function takes a DataFrame and operation params, returns a new DataFrame.
 Never mutates the input DataFrame.
 """
+
 from __future__ import annotations
 
 import logging
@@ -104,7 +105,9 @@ def execute_add_column(df: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame
         op = params.get("operation", "sum")
         _validate_columns_exist(df, source_columns)
         if op == "sum":
-            result[name] = sum(pd.to_numeric(result[c], errors="coerce").fillna(0) for c in source_columns)
+            result[name] = sum(
+                pd.to_numeric(result[c], errors="coerce").fillna(0) for c in source_columns
+            )
         elif op == "concat":
             separator = params.get("separator", " ")
             result[name] = result[source_columns[0]].astype(str)
@@ -215,7 +218,7 @@ def execute_split_column(df: pd.DataFrame, params: dict[str, Any]) -> pd.DataFra
                 result[name] = split_df[i].str.strip()
     else:
         for i in range(split_df.shape[1]):
-            result[f"{column}_{i+1}"] = split_df[i].str.strip()
+            result[f"{column}_{i + 1}"] = split_df[i].str.strip()
 
     if drop_original:
         result = result.drop(columns=[column])
@@ -250,7 +253,8 @@ def execute_fill_nulls(df: pd.DataFrame, params: dict[str, Any]) -> pd.DataFrame
         if len(mode_val) > 0:
             result[column] = result[column].fillna(mode_val.iloc[0])
     elif method in ("ffill", "bfill"):
-        result[column] = result[column].fillna(method=method)
+        # pandas 3.0 removed fillna(method=...)
+        result[column] = result[column].ffill() if method == "ffill" else result[column].bfill()
     elif value is not None:
         result[column] = result[column].fillna(value)
     else:
@@ -325,14 +329,20 @@ def execute_operations(df: pd.DataFrame, operations: list[dict[str, Any]]) -> pd
 
         executor = OPERATION_MAP.get(op_type)
         if executor is None:
-            raise ManipulationError(f"Step {i+1}: Unknown operation '{op_type}'")
+            raise ManipulationError(f"Step {i + 1}: Unknown operation '{op_type}'")
 
         try:
             result = executor(result, params)
-            logger.info("Step %d: %s completed (%d rows, %d cols)", i + 1, op_type, len(result), len(result.columns))
+            logger.info(
+                "Step %d: %s completed (%d rows, %d cols)",
+                i + 1,
+                op_type,
+                len(result),
+                len(result.columns),
+            )
         except ManipulationError:
             raise
         except Exception as e:
-            raise ManipulationError(f"Step {i+1} [{op_type}] failed: {e}")
+            raise ManipulationError(f"Step {i + 1} [{op_type}] failed: {e}")
 
     return result

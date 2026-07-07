@@ -25,6 +25,7 @@ from app.services.verification import (
 # Per-operation validator tests
 # ---------------------------------------------------------------------------
 
+
 class TestValidateRemoveCurrencySymbols:
     def test_passes_when_clean(self):
         df = pd.DataFrame({"cost": ["100", "200", "300"]})
@@ -120,6 +121,7 @@ class TestValidateDeduplicate:
 # Audit completeness
 # ---------------------------------------------------------------------------
 
+
 class TestAuditCompleteness:
     def test_full_coverage(self):
         original = pd.DataFrame({"Expense_Lodging": ["$100", "$200", "300"]})
@@ -143,10 +145,49 @@ class TestAuditCompleteness:
         completeness = _compute_audit_completeness(original, {}, [])
         assert completeness == 1.0
 
+    def test_qualtrics_header_flag_credited_by_drop_rows_entry(self):
+        original = pd.DataFrame({"Q1": ["What is your favorite thing about...", "5"]})
+        flags = {"qualtrics_header_row": {"row_index": 0}}
+        audit_log = [
+            {
+                "row": 1,
+                "column": "_row_",
+                "original_value": "{'Q1': '...'}",
+                "new_value": "<dropped>",
+                "operation": "drop_rows",
+                "rule": "Row dropped by index (metadata/header row)",
+            }
+        ]
+        completeness = _compute_audit_completeness(original, flags, audit_log)
+        assert completeness == 1.0
+
+    def test_drop_rows_executor_audit_credits_qualtrics_flag(self):
+        """Regression: the executor's real drop_rows audit entries must be the
+        shape _compute_audit_completeness looks for, or the remediation loop
+        can never reach a clean completeness score on Qualtrics files."""
+        from app.services.cleaning import execute_cleaning_plan
+
+        df = pd.DataFrame({"Q1": ["long header description text", "5", "7"]})
+        step = {
+            "operation": "drop_rows",
+            "column": None,
+            "params": {"indices": [0]},
+            "description": "drop header",
+        }
+        _, audit, failed = execute_cleaning_plan(df, [step])
+        assert not failed
+        completeness = _compute_audit_completeness(
+            df,
+            {"qualtrics_header_row": {"row_index": 0}},
+            audit,
+        )
+        assert completeness == 1.0
+
 
 # ---------------------------------------------------------------------------
 # Full verification pipeline
 # ---------------------------------------------------------------------------
+
 
 class TestVerifyCleaningResult:
     def test_all_passed_clean_data(self):
@@ -161,9 +202,27 @@ class TestVerifyCleaningResult:
         ]
 
         audit_log = [
-            {"row": 1, "column": "cost", "original_value": "$100", "new_value": 100.0, "operation": "remove_currency_symbols"},
-            {"row": 2, "column": "cost", "original_value": "Free", "new_value": 0, "operation": "free_to_zero"},
-            {"row": 3, "column": "cost", "original_value": "n/a", "new_value": None, "operation": "remove_vague_entries"},
+            {
+                "row": 1,
+                "column": "cost",
+                "original_value": "$100",
+                "new_value": 100.0,
+                "operation": "remove_currency_symbols",
+            },
+            {
+                "row": 2,
+                "column": "cost",
+                "original_value": "Free",
+                "new_value": 0,
+                "operation": "free_to_zero",
+            },
+            {
+                "row": 3,
+                "column": "cost",
+                "original_value": "n/a",
+                "new_value": None,
+                "operation": "remove_vague_entries",
+            },
         ]
 
         # The original flags for "cost" column
@@ -182,7 +241,11 @@ class TestVerifyCleaningResult:
         assert isinstance(report, VerificationReport)
         # Steps should pass their postconditions
         for step_result in report.step_results:
-            if step_result.operation in ("free_to_zero", "remove_currency_symbols", "remove_vague_entries"):
+            if step_result.operation in (
+                "free_to_zero",
+                "remove_currency_symbols",
+                "remove_vague_entries",
+            ):
                 assert step_result.passed, f"{step_result.operation} should pass"
 
     def test_failed_step_included(self):
@@ -195,7 +258,12 @@ class TestVerifyCleaningResult:
         ]
 
         failed_steps = [
-            {"step_index": 0, "operation": "remove_currency_symbols", "column": "cost", "error": "test error"},
+            {
+                "step_index": 0,
+                "operation": "remove_currency_symbols",
+                "column": "cost",
+                "error": "test error",
+            },
         ]
 
         report = verify_cleaning_result(

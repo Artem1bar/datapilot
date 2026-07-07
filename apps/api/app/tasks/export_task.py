@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 
 import pandas as pd
 from sqlalchemy import select, update
+from sqlalchemy.exc import NoResultFound
 
 from app.config import settings
 from app.services.storage import download_file_bytes, get_s3_client
@@ -23,30 +24,17 @@ logger = logging.getLogger(__name__)
 
 
 def _get_sync_engine():
-    """Create a synchronous SQLAlchemy engine for use inside Celery workers."""
-    from sqlalchemy import create_engine
+    """Return the shared per-process sync engine (see app.tasks._db)."""
+    from app.tasks._db import get_sync_engine
 
-    if "asyncpg" in settings.DATABASE_URL:
-        sync_url = settings.DATABASE_URL.replace("asyncpg", "psycopg2")
-    else:
-        sync_url = settings.DATABASE_URL
-    return create_engine(sync_url)
+    return get_sync_engine()
 
 
 def _publish_progress_sync(job_id: str, status: str, progress: int, message: str = "") -> None:
-    """Publish job progress via Redis (synchronous)."""
-    import redis
+    """Report job progress (persists to the Job row + Redis pub/sub)."""
+    from app.tasks._progress import publish_progress_sync
 
-    r = redis.from_url(settings.REDIS_URL)
-    payload = json.dumps({
-        "job_id": job_id,
-        "status": status,
-        "progress": progress,
-        "message": message,
-        "result": None,
-    })
-    r.publish(f"job:{job_id}:progress", payload)
-    r.close()
+    publish_progress_sync(job_id, status, progress, message)
 
 
 def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
@@ -176,6 +164,15 @@ def export_dataset(
 
     except Exception as exc:
         logger.exception("Failed to export dataset %s", dataset_id)
+
+        non_retryable = isinstance(exc, (ValueError, TypeError, KeyError, NoResultFound))
+        retries_exhausted = (self.request.retries or 0) >= self.max_retries
+        if not (non_retryable or retries_exhausted):
+            # Transient failure with retries left: keep the job in "running"
+            # state so clients don't see a failure that may still succeed.
+            _publish_progress_sync(job_id, "running", 0, f"Transient error — retrying: {exc}")
+            raise self.retry(exc=exc, countdown=30)
+
         _publish_progress_sync(job_id, "failed", 0, str(exc))
 
         with Session(engine) as session:
@@ -190,4 +187,4 @@ def export_dataset(
             )
             session.commit()
 
-        raise self.retry(exc=exc, countdown=30)
+        raise

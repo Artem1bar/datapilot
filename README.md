@@ -107,9 +107,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**376 tests total** (333 backend + 43 frontend).
+**422 tests total** (379 backend + 43 frontend).
 
-### Backend (333 tests) — run from `apps/api/`
+### Backend (379 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -138,6 +138,10 @@ uv run pytest
 | `test_verification.py` | Cleaning verification logic |
 | `test_health.py` | API health endpoint |
 | `test_history.py` | History entry creation, UUID uniqueness, metadata isolation |
+| `test_plan_validator.py` | Pre-execution plan validation (unknown ops, missing columns, bad params) |
+| `test_plan_generation.py` | Plan generate → validate → regenerate-on-invalid loop |
+| `test_datasets_router.py` | Dataset download/delete endpoints, JSON-safe previews |
+| `test_progress_reporting.py` / `test_task_db.py` | Per-stage job progress persistence, shared worker DB engine |
 
 ### Frontend (43 tests) — run from `apps/web/`
 

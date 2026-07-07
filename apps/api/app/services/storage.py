@@ -80,7 +80,9 @@ def create_presigned_download_url(
     return url
 
 
-def upload_file_bytes(key: str, data: bytes, content_type: str = "application/octet-stream") -> None:
+def upload_file_bytes(
+    key: str, data: bytes, content_type: str = "application/octet-stream"
+) -> None:
     """Upload bytes directly to S3/MinIO/R2."""
     client = get_s3_client()
     client.put_object(Bucket=settings.R2_BUCKET_NAME, Key=key, Body=data, ContentType=content_type)
@@ -91,3 +93,9 @@ def download_file_bytes(key: str) -> bytes:
     client = get_s3_client()
     response = client.get_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
     return response["Body"].read()
+
+
+def delete_object(key: str) -> None:
+    """Delete an object from S3/MinIO/R2."""
+    client = get_s3_client()
+    client.delete_object(Bucket=settings.R2_BUCKET_NAME, Key=key)

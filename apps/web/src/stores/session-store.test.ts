@@ -214,7 +214,14 @@ describe("createMessage", () => {
   });
 
   it("accepts an optional card payload", () => {
-    const card = { type: "data_overview" as const, payload: {} as never };
+    const card = {
+      type: "data_overview" as const,
+      rowCount: 10,
+      colCount: 3,
+      fileSizeBytes: 1024,
+      nullPercentage: 0.5,
+      columnTypes: { string: 2, number: 1 },
+    };
     const msg = createMessage("assistant", "Here is your data", card);
     expect(msg.card).toEqual(card);
   });

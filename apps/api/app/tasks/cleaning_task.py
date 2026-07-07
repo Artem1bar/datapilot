@@ -16,6 +16,7 @@ from typing import Any
 
 import pandas as pd
 from sqlalchemy import select, update
+from sqlalchemy.exc import NoResultFound
 
 from app.config import settings
 from app.services.storage import download_file_bytes, get_s3_client
@@ -25,33 +26,17 @@ logger = logging.getLogger(__name__)
 
 
 def _get_sync_engine():
-    """Create a synchronous SQLAlchemy engine for use inside Celery workers."""
-    from sqlalchemy import create_engine
+    """Return the shared per-process sync engine (see app.tasks._db)."""
+    from app.tasks._db import get_sync_engine
 
-    if "asyncpg" in settings.DATABASE_URL:
-        sync_url = settings.DATABASE_URL.replace("asyncpg", "psycopg2")
-    else:
-        sync_url = settings.DATABASE_URL
-    return create_engine(sync_url)
+    return get_sync_engine()
 
 
 def _publish_progress_sync(job_id: str, status: str, progress: int, message: str = "") -> None:
-    """Publish job progress via Redis (synchronous)."""
-    import redis
+    """Report job progress (persists to the Job row + Redis pub/sub)."""
+    from app.tasks._progress import publish_progress_sync
 
-    try:
-        r = redis.from_url(settings.REDIS_URL)
-        payload = json.dumps({
-            "job_id": job_id,
-            "status": status,
-            "progress": progress,
-            "message": message,
-            "result": None,
-        })
-        r.publish(f"job:{job_id}:progress", payload)
-        r.close()
-    except Exception as exc:
-        logger.warning("Progress publish failed (non-fatal): %s", exc)
+    publish_progress_sync(job_id, status, progress, message)
 
 
 def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
@@ -126,13 +111,24 @@ def _dataframe_to_bytes(
                         pass  # skip if cell out of range
 
                 # ── Cleaning Legend sheet ──
-                legend_df = pd.DataFrame(audit_log, columns=[
-                    "row", "column", "original_value", "new_value",
-                    "operation", "rule",
-                ])
+                legend_df = pd.DataFrame(
+                    audit_log,
+                    columns=[
+                        "row",
+                        "column",
+                        "original_value",
+                        "new_value",
+                        "operation",
+                        "rule",
+                    ],
+                )
                 legend_df.columns = [
-                    "Row", "Column", "Original Value", "New Value",
-                    "Operation", "Rule Applied",
+                    "Row",
+                    "Column",
+                    "Original Value",
+                    "New Value",
+                    "Operation",
+                    "Rule Applied",
                 ]
                 legend_df.to_excel(writer, sheet_name="Cleaning Legend", index=False)
 
@@ -213,9 +209,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         # Fetch original quality flags from dataset profile
         original_quality_flags: dict[str, Any] = {}
         with Session(engine) as session:
-            ds_result = session.execute(
-                select(Dataset).where(Dataset.id == uuid.UUID(dataset_id))
-            )
+            ds_result = session.execute(select(Dataset).where(Dataset.id == uuid.UUID(dataset_id)))
             ds = ds_result.scalar_one()
             if ds.profile_json and "data_quality" in ds.profile_json:
                 original_quality_flags = ds.profile_json["data_quality"]
@@ -232,7 +226,9 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         if failed_steps:
             logger.warning(
                 "Dataset %s: %d/%d cleaning steps failed: %s",
-                dataset_id, len(failed_steps), len(steps),
+                dataset_id,
+                len(failed_steps),
+                len(steps),
                 [s["operation"] for s in failed_steps],
             )
 
@@ -249,7 +245,8 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
             progress_base = 55 + round_num * 6
 
             _publish_progress_sync(
-                job_id, "running",
+                job_id,
+                "running",
                 progress_base,
                 f"Verifying cleaning results ({round_label})",
             )
@@ -280,7 +277,8 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
 
             # Run Claude verification agent
             _publish_progress_sync(
-                job_id, "running",
+                job_id,
+                "running",
                 progress_base + 2,
                 f"Running AI verification agent ({round_label})",
             )
@@ -302,15 +300,19 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
 
                 # Count critical/high issues
                 critical_high = [
-                    i for i in agent_result.issues_found
+                    i
+                    for i in agent_result.issues_found
                     if isinstance(i, dict) and i.get("severity") in ("CRITICAL", "HIGH")
                 ]
 
                 logger.info(
                     "Verification agent (%s): passed=%s confidence=%.2f "
                     "issues=%d (critical/high=%d) remediation_steps=%d",
-                    round_label, agent_result.passed, agent_result.confidence,
-                    len(agent_result.issues_found), len(critical_high),
+                    round_label,
+                    agent_result.passed,
+                    agent_result.confidence,
+                    len(agent_result.issues_found),
+                    len(critical_high),
                     len(agent_result.remediation_steps),
                 )
 
@@ -323,21 +325,48 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                 if not agent_result.remediation_steps:
                     logger.warning(
                         "Agent found %d issues but gave no remediation steps in %s — stopping",
-                        len(agent_result.issues_found), round_label,
+                        len(agent_result.issues_found),
+                        round_label,
+                    )
+                    agent_assessment["remediation_applied"] = bool(all_remediation_steps)
+                    break
+
+                # Validate agent-proposed steps before executing anything
+                from app.services.cleaning import _OPERATION_MAP
+                from app.services.plan_validator import validate_plan
+
+                remediation_steps = list(agent_result.remediation_steps)
+                issues = validate_plan(remediation_steps, set(_OPERATION_MAP), list(df.columns))
+                if issues:
+                    invalid_indices = {issue.step_index for issue in issues}
+                    logger.warning(
+                        "Dropping %d invalid remediation step(s) in %s: %s",
+                        len(invalid_indices),
+                        round_label,
+                        [str(issue) for issue in issues][:5],
+                    )
+                    remediation_steps = [
+                        s for idx, s in enumerate(remediation_steps) if idx not in invalid_indices
+                    ]
+                if not remediation_steps:
+                    logger.warning(
+                        "No valid remediation steps remain in %s — stopping",
+                        round_label,
                     )
                     agent_assessment["remediation_applied"] = bool(all_remediation_steps)
                     break
 
                 # Apply remediation steps
-                remediation_steps = list(agent_result.remediation_steps)
                 _publish_progress_sync(
-                    job_id, "running",
+                    job_id,
+                    "running",
                     progress_base + 4,
                     f"Applying {len(remediation_steps)} remediation step(s) ({round_label})",
                 )
                 logger.info(
                     "Applying %d remediation step(s) in %s: %s",
-                    len(remediation_steps), round_label,
+                    len(remediation_steps),
+                    round_label,
                     [s.get("operation") for s in remediation_steps],
                 )
 
@@ -350,7 +379,8 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                     failed_steps = failed_steps + extra_failed
                     logger.warning(
                         "%d remediation step(s) failed in %s: %s",
-                        len(extra_failed), round_label,
+                        len(extra_failed),
+                        round_label,
                         [s.get("operation") for s in extra_failed],
                     )
 
@@ -418,7 +448,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
             "steps_applied": len(steps),
             "steps_failed": len(failed_steps),
             "cells_modified": len(audit_log),
-            "audit_log": audit_log,          # full Cleaning Legend
+            "audit_log": audit_log,  # full Cleaning Legend
             "failed_steps": failed_steps,
             "verification": verification_data,
         }
@@ -441,12 +471,24 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         _publish_progress_sync(job_id, "completed", 100, "Cleaning complete")
         logger.info(
             "Cleaned dataset %s: %d -> %d rows (%d steps)",
-            dataset_id, original_rows, cleaned_rows, len(steps),
+            dataset_id,
+            original_rows,
+            cleaned_rows,
+            len(steps),
         )
         return {"status": "completed", "dataset_id": dataset_id, "job_id": job_id}
 
     except Exception as exc:
         logger.exception("Failed to clean dataset %s", dataset_id)
+
+        non_retryable = isinstance(exc, (ValueError, TypeError, KeyError, NoResultFound))
+        retries_exhausted = (self.request.retries or 0) >= self.max_retries
+        if not (non_retryable or retries_exhausted):
+            # Transient failure with retries left: keep the job in "running"
+            # state so clients don't see a failure that may still succeed.
+            _publish_progress_sync(job_id, "running", 0, f"Transient error — retrying: {exc}")
+            raise self.retry(exc=exc, countdown=30)
+
         _publish_progress_sync(job_id, "failed", 0, str(exc))
 
         with Session(engine) as session:
@@ -461,4 +503,4 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
             )
             session.commit()
 
-        raise self.retry(exc=exc, countdown=30)
+        raise

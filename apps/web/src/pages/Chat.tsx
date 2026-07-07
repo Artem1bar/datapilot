@@ -382,11 +382,22 @@ export default function Chat() {
         })
         .json<JobResponse>();
 
-      // Poll job — apply endpoint returns JobResponse with id, not job_id
-      const jobResult = await pollJob(applyJob.id);
+      // Poll job — apply endpoint returns JobResponse with id, not job_id.
+      // The worker persists per-stage progress on the Job row, so polling
+      // drives an honest progress bar.
+      const updateMessage = useSessionStore.getState().updateMessage;
+      const jobResult = await pollJob(applyJob.id, (progress) => {
+        updateMessage(sessionId, progressMsgId, {
+          card: {
+            type: "cleaning_progress",
+            progress,
+            status: "running",
+            message: progressStageLabel(progress),
+          },
+        });
+      });
 
       // Update progress card to complete
-      const updateMessage = useSessionStore.getState().updateMessage;
       updateMessage(sessionId, progressMsgId, {
         card: {
           type: "cleaning_progress",
@@ -633,13 +644,28 @@ async function pollDatasetReady(datasetId: string, maxAttempts = 30): Promise<Da
 
 async function pollJob(
   jobId: string,
+  onProgress?: (progress: number) => void,
   maxAttempts = 120,
 ): Promise<{ status: string; result_json: unknown }> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 3000));
-    const job = await api.get(`jobs/${jobId}`).json<{ status: string; result_json: unknown; error_text: string | null }>();
+    const job = await api.get(`jobs/${jobId}`).json<{
+      status: string;
+      progress: number;
+      result_json: unknown;
+      error_text: string | null;
+    }>();
     if (job.status === "completed") return job;
     if (job.status === "failed") throw new Error(job.error_text ?? "Job failed");
+    onProgress?.(job.progress ?? 0);
   }
   throw new Error("Job timed out");
+}
+
+/** Human-readable stage label for a cleaning job's backend progress value. */
+function progressStageLabel(progress: number): string {
+  if (progress < 20) return "Preparing data...";
+  if (progress < 55) return "Applying cleaning steps...";
+  if (progress < 80) return "Verifying results & fixing issues...";
+  return "Finalizing cleaned file...";
 }

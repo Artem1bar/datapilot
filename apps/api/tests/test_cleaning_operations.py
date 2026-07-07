@@ -14,6 +14,7 @@ from app.services.cleaning import execute_cleaning_plan
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run_step(df: pd.DataFrame, operation: str, column: str | None = None, **params):
     """Execute a single cleaning step and return (cleaned_df, audit_log, failed_steps)."""
     steps = [{"operation": operation, "column": column, "params": params, "description": "test"}]
@@ -23,6 +24,7 @@ def _run_step(df: pd.DataFrame, operation: str, column: str | None = None, **par
 # ---------------------------------------------------------------------------
 # drop_rows
 # ---------------------------------------------------------------------------
+
 
 class TestDropRows:
     def test_drops_specified_rows(self):
@@ -37,10 +39,29 @@ class TestDropRows:
         cleaned, audit, failed = _run_step(df, "drop_rows", indices=[])
         assert len(cleaned) == 3
 
+    def test_audit_entries_use_standard_keys(self):
+        """drop_rows must write the same audit shape as every other operation
+        (operation/row keys) — verification counts on it."""
+        df = pd.DataFrame({"a": ["header_text", "1", "2"]})
+        cleaned, audit, failed = _run_step(df, "drop_rows", indices=[0])
+        assert len(audit) == 1
+        entry = audit[0]
+        assert entry["operation"] == "drop_rows"
+        assert entry["column"] == "_row_"
+        assert entry["row"] == 1  # 1-based, like all other audit entries
+        assert entry["new_value"] == "<dropped>"
+
+    def test_negative_indices_are_ignored(self):
+        df = pd.DataFrame({"a": [1, 2, 3]})
+        cleaned, audit, failed = _run_step(df, "drop_rows", indices=[-1, 0])
+        assert len(cleaned) == 2
+        assert cleaned["a"].tolist() == [2, 3]
+
 
 # ---------------------------------------------------------------------------
 # strip_whitespace
 # ---------------------------------------------------------------------------
+
 
 class TestStripWhitespace:
     def test_strips_leading_trailing(self):
@@ -59,6 +80,7 @@ class TestStripWhitespace:
 # ---------------------------------------------------------------------------
 # remove_currency_symbols
 # ---------------------------------------------------------------------------
+
 
 class TestRemoveCurrencySymbols:
     def test_removes_dollar_sign(self):
@@ -83,6 +105,7 @@ class TestRemoveCurrencySymbols:
 # extract_number
 # ---------------------------------------------------------------------------
 
+
 class TestExtractNumber:
     def test_extracts_from_text(self):
         df = pd.DataFrame({"val": ["$400 a person", "1.5 hours", "pure text"]})
@@ -102,6 +125,7 @@ class TestExtractNumber:
 # convert_number_words
 # ---------------------------------------------------------------------------
 
+
 class TestConvertNumberWords:
     def test_converts_basic_words(self):
         df = pd.DataFrame({"count": ["one", "five", "twenty"]})
@@ -118,6 +142,7 @@ class TestConvertNumberWords:
 # ---------------------------------------------------------------------------
 # free_to_zero
 # ---------------------------------------------------------------------------
+
 
 class TestFreeToZero:
     def test_converts_free_variations(self):
@@ -138,6 +163,7 @@ class TestFreeToZero:
 # remove_vague_entries
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveVagueEntries:
     def test_removes_known_vague_words(self):
         df = pd.DataFrame({"amount": ["n/a", "none", "unknown", "100"]})
@@ -157,7 +183,15 @@ class TestRemoveVagueEntries:
 # cast_type
 # ---------------------------------------------------------------------------
 
+
 class TestCastType:
+    def test_cast_to_str_preserves_nulls(self):
+        df = pd.DataFrame({"v": ["a", None, "b"]})
+        cleaned, audit, failed = _run_step(df, "cast_type", "v", target_type="str")
+        assert cleaned["v"].isna().sum() == 1
+        assert "nan" not in cleaned["v"].dropna().tolist()
+        assert "None" not in cleaned["v"].dropna().tolist()
+
     def test_cast_to_float(self):
         df = pd.DataFrame({"val": ["1.5", "2.0", "3.5"]})
         cleaned, audit, failed = _run_step(df, "cast_type", "val", target_type="float")
@@ -173,6 +207,7 @@ class TestCastType:
 # deduplicate
 # ---------------------------------------------------------------------------
 
+
 class TestDeduplicate:
     def test_removes_full_duplicates(self):
         df = pd.DataFrame({"a": [1, 1, 2, 2, 3], "b": ["x", "x", "y", "y", "z"]})
@@ -183,6 +218,7 @@ class TestDeduplicate:
 # ---------------------------------------------------------------------------
 # execute_cleaning_plan — error handling
 # ---------------------------------------------------------------------------
+
 
 class TestExecuteCleaningPlan:
     def test_unknown_operation_recorded_as_failed(self):
@@ -196,9 +232,19 @@ class TestExecuteCleaningPlan:
     def test_multiple_steps_execute_in_order(self):
         df = pd.DataFrame({"cost": ["  $100  ", "  Free  "]})
         steps = [
-            {"operation": "strip_whitespace", "column": "cost", "params": {}, "description": "trim"},
+            {
+                "operation": "strip_whitespace",
+                "column": "cost",
+                "params": {},
+                "description": "trim",
+            },
             {"operation": "free_to_zero", "column": "cost", "params": {}, "description": "free→0"},
-            {"operation": "remove_currency_symbols", "column": "cost", "params": {}, "description": "strip $"},
+            {
+                "operation": "remove_currency_symbols",
+                "column": "cost",
+                "params": {},
+                "description": "strip $",
+            },
         ]
         cleaned, audit, failed = execute_cleaning_plan(df, steps)
         assert len(failed) == 0

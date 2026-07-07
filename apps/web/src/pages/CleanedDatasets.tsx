@@ -9,6 +9,25 @@ export default function CleanedDatasets() {
   const [datasets, setDatasets] = useState<DatasetResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDelete(ds: DatasetResponse) {
+    const confirmed = window.confirm(
+      `Delete "${ds.filename}" and its cleaned files? This cannot be undone.`,
+    );
+    if (!confirmed) return;
+    setDeletingId(ds.id);
+    setDeleteError(null);
+    try {
+      await api.delete(`datasets/${ds.id}`);
+      setDatasets((prev) => prev.filter((d) => d.id !== ds.id));
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : "Failed to delete dataset");
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   useEffect(() => {
     (async () => {
@@ -44,9 +63,15 @@ export default function CleanedDatasets() {
       <div className="mb-6">
         <h1 className="text-xl font-semibold text-ink">Cleaned Datasets</h1>
         <p className="mt-1 text-[13px] text-ink-tertiary">
-          Datasets that have been processed by Data Tiger.
+          Datasets that have been processed by DataPilot.
         </p>
       </div>
+
+      {deleteError && (
+        <p className="mb-4 rounded-lg border border-coral-200 bg-coral-50 px-3 py-2 text-[13px] text-coral-700">
+          {deleteError}
+        </p>
+      )}
 
       {datasets.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-20 text-center">
@@ -97,8 +122,14 @@ export default function CleanedDatasets() {
                   size="icon"
                   className="h-8 w-8 text-ink-muted hover:text-coral-600"
                   title="Delete"
+                  disabled={deletingId === ds.id}
+                  onClick={() => void handleDelete(ds)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  {deletingId === ds.id ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="h-4 w-4" />
+                  )}
                 </Button>
               </div>
             </div>

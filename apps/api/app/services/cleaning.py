@@ -35,18 +35,42 @@ def _get_client() -> Anthropic:
         _anthropic_client = Anthropic(api_key=settings.ANTHROPIC_API_KEY or None)
     return _anthropic_client
 
+
 # ---------------------------------------------------------------------------
 # Number-word lookup table
 # ---------------------------------------------------------------------------
 
 _NUMBER_WORDS: dict[str, int] = {
-    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
-    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
-    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50,
-    "sixty": 60, "seventy": 70, "eighty": 80, "ninety": 90,
-    "hundred": 100, "thousand": 1000,
+    "zero": 0,
+    "one": 1,
+    "two": 2,
+    "three": 3,
+    "four": 4,
+    "five": 5,
+    "six": 6,
+    "seven": 7,
+    "eight": 8,
+    "nine": 9,
+    "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
+    "thirteen": 13,
+    "fourteen": 14,
+    "fifteen": 15,
+    "sixteen": 16,
+    "seventeen": 17,
+    "eighteen": 18,
+    "nineteen": 19,
+    "twenty": 20,
+    "thirty": 30,
+    "forty": 40,
+    "fifty": 50,
+    "sixty": 60,
+    "seventy": 70,
+    "eighty": 80,
+    "ninety": 90,
+    "hundred": 100,
+    "thousand": 1000,
 }
 
 _NUMBER_WORD_PATTERN = re.compile(
@@ -181,11 +205,16 @@ def _build_issues_summary(profile_json: dict[str, Any]) -> str:
         lines.append(
             f"- **QUALTRICS HEADER ROW** at row index {qr['row_index']}: "
             "The first data row contains full question descriptions, not real data. "
-            "Add a `drop_rows` step with `params: {{\"indices\": [0]}}` FIRST.\n"
+            'Add a `drop_rows` step with `params: {{"indices": [0]}}` FIRST.\n'
         )
 
     for col, flags in quality.items():
-        if col in ("qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses") or not isinstance(flags, dict):
+        if col in (
+            "qualtrics_header_row",
+            "_dirty_column_names",
+            "_empty_columns",
+            "_incomplete_responses",
+        ) or not isinstance(flags, dict):
             continue
         if flags.get("has_currency"):
             ex = flags.get("currency_examples", [])
@@ -208,8 +237,7 @@ def _build_issues_summary(profile_json: dict[str, Any]) -> str:
         if flags.get("has_number_words"):
             ex = flags.get("number_word_examples", [])
             lines.append(
-                f"- **{col}** — contains number words (e.g. {ex}). "
-                "Use `convert_number_words`."
+                f"- **{col}** — contains number words (e.g. {ex}). Use `convert_number_words`."
             )
         if flags.get("has_vague_values"):
             ex = flags.get("vague_examples", [])
@@ -243,7 +271,12 @@ def _filter_sample_rows_to_flagged_columns(
     all_cols = list(sample_rows[0].keys())
 
     # Structural meta-keys to skip (they don't correspond to column names)
-    _meta_keys = {"qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses"}
+    _meta_keys = {
+        "qualtrics_header_row",
+        "_dirty_column_names",
+        "_empty_columns",
+        "_incomplete_responses",
+    }
 
     # Flagged columns (excluding meta keys)
     flagged = {col for col in data_quality if col not in _meta_keys and col in all_cols}
@@ -310,8 +343,8 @@ def generate_cleaning_plan(
         "    clean_column_names — normalise column names (remove NBSP, trim spaces)\n"
         "    drop_empty_columns — drop columns that are 100% null\n"
         "    drop_incomplete_responses — drop rows with Progress < 100 and Finished != True\n"
-        "      params: {\"progress_column\": \"Progress\", \"finished_column\": \"Finished\", \"min_progress\": 100}\n"
-        "  ROW REMOVAL: drop_rows (params: {\"indices\": [0, 1, ...]}) — drop specific row indices\n"
+        '      params: {"progress_column": "Progress", "finished_column": "Finished", "min_progress": 100}\n'
+        '  ROW REMOVAL: drop_rows (params: {"indices": [0, 1, ...]}) — drop specific row indices\n'
         "  FORMATTING: strip_whitespace, remove_currency_symbols, extract_number,\n"
         "              convert_number_words, convert_time_to_number\n"
         "  STANDARDIZATION: free_to_zero, remove_vague_entries, standardize_values,\n"
@@ -320,7 +353,7 @@ def generate_cleaning_plan(
         "  ANOMALY DETECTION:\n"
         "    flag_extreme_outliers — null out statistical outliers (MAD-based z-score)\n"
         "    cap_extreme_values — null out values above a hard ceiling\n"
-        "      params: {\"max_value\": 50000} — USE THIS for obvious data entry errors\n"
+        '      params: {"max_value": 50000} — USE THIS for obvious data entry errors\n'
         "    flag_contextual_fraud — flag contextually suspicious values\n"
         "  OTHER: deduplicate, rename_column, remove_outliers\n\n"
         "IMPORTANT RULES:\n"
@@ -342,45 +375,105 @@ def generate_cleaning_plan(
             f"{user_instructions.strip()}\n"
         )
 
-    logger.info("Requesting cleaning plan from Claude (model=claude-opus-4-8, flagged_cols=%d)", len(data_quality))
-    response = client.messages.create(
-        model="claude-opus-4-8",
-        max_tokens=16384,
-        system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-        messages=[{"role": "user", "content": user_message}],
+    from app.services.plan_validator import validate_plan
+
+    known_operations = set(_OPERATION_MAP)
+    columns = list((profile_json.get("columns") or {}).keys())
+    if not columns and sample_rows:
+        columns = list(sample_rows[0].keys())
+
+    logger.info(
+        "Requesting cleaning plan from Claude (model=claude-opus-4-8, flagged_cols=%d)",
+        len(data_quality),
     )
 
-    response_text = response.content[0].text
-    logger.debug("Claude response: %s", response_text[:500])
+    # Generate → validate → (on failure) regenerate once with the specific
+    # errors fed back, so hallucinated operations/columns and malformed JSON
+    # never reach the executor as silently failed steps.
+    max_attempts = 2
+    conversation: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
+    last_error = ""
 
-    parsed = _extract_json_from_response(response_text)
-
-    if isinstance(parsed, list):
-        steps = parsed
-    elif isinstance(parsed, dict) and "steps" in parsed:
-        steps = parsed["steps"]
-    else:
-        raise ValueError(f"Unexpected cleaning plan structure: {type(parsed)}")
-
-    # Guard: if quality flags exist but Claude returned no steps, something went wrong
-    if not steps and data_quality:
-        flagged_cols = [k for k in data_quality if k != "qualtrics_header_row"]
-        raise ValueError(
-            f"Claude returned 0 cleaning steps despite {len(data_quality)} detected quality issues "
-            f"(flagged columns: {flagged_cols[:5]}). Response: {response_text[:300]}"
+    for attempt in range(1, max_attempts + 1):
+        response = client.messages.create(
+            model="claude-opus-4-8",
+            max_tokens=16384,
+            system=[
+                {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+            ],
+            messages=conversation,
         )
+        response_text = response.content[0].text
+        logger.debug("Claude response: %s", response_text[:500])
 
-    validated_steps = []
-    for step in steps:
-        validated_steps.append({
-            "operation": step.get("operation", ""),
-            "column": step.get("column"),
-            "params": step.get("params", {}),
-            "description": step.get("description", ""),
-        })
+        try:
+            parsed = _extract_json_from_response(response_text)
 
-    logger.info("Generated cleaning plan with %d steps", len(validated_steps))
-    return validated_steps
+            if isinstance(parsed, list):
+                steps = parsed
+            elif isinstance(parsed, dict) and "steps" in parsed:
+                steps = parsed["steps"]
+            else:
+                raise ValueError(f"Unexpected cleaning plan structure: {type(parsed)}")
+
+            if not isinstance(steps, list) or not all(isinstance(s, dict) for s in steps):
+                raise ValueError("Plan steps must be a JSON array of objects")
+
+            # Guard: if quality flags exist but Claude returned no steps, something went wrong
+            if not steps and data_quality:
+                flagged_cols = [k for k in data_quality if k != "qualtrics_header_row"]
+                raise ValueError(
+                    f"Plan has 0 steps despite {len(data_quality)} detected quality issues "
+                    f"(flagged columns: {flagged_cols[:5]})"
+                )
+
+            validated_steps = []
+            for step in steps:
+                validated_steps.append(
+                    {
+                        "operation": step.get("operation", ""),
+                        "column": step.get("column"),
+                        "params": step.get("params", {}),
+                        "description": step.get("description", ""),
+                    }
+                )
+
+            issues = validate_plan(validated_steps, known_operations, columns)
+            if not issues:
+                logger.info(
+                    "Generated cleaning plan with %d steps (attempt %d/%d)",
+                    len(validated_steps),
+                    attempt,
+                    max_attempts,
+                )
+                return validated_steps
+            last_error = "\n".join(str(issue) for issue in issues)
+        except ValueError as exc:
+            last_error = str(exc)
+
+        if attempt < max_attempts:
+            logger.warning(
+                "Cleaning plan attempt %d/%d rejected, regenerating: %s",
+                attempt,
+                max_attempts,
+                last_error[:300],
+            )
+            conversation.append({"role": "assistant", "content": response_text})
+            conversation.append(
+                {
+                    "role": "user",
+                    "content": (
+                        "Your cleaning plan was rejected by the plan validator:\n"
+                        f"{last_error}\n\n"
+                        "Return the complete corrected CleaningPlan as JSON (all steps, "
+                        "not just the fixed ones). Return ONLY valid JSON."
+                    ),
+                }
+            )
+
+    raise ValueError(
+        f"Cleaning plan failed validation after {max_attempts} attempts: {last_error[:500]}"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -441,14 +534,16 @@ def _diff_column(
         # Skip semantic no-ops (e.g. "80" → 80.0)
         if _values_semantically_equal(orig, new):
             continue
-        entries.append({
-            "row": int(idx) + 1,          # 1-based for human readability
-            "column": column,
-            "original_value": None if pd.isna(orig) else orig,
-            "new_value": None if pd.isna(new) else new,
-            "operation": operation,
-            "rule": rule,
-        })
+        entries.append(
+            {
+                "row": int(idx) + 1,  # 1-based for human readability
+                "column": column,
+                "original_value": None if pd.isna(orig) else orig,
+                "new_value": None if pd.isna(new) else new,
+                "operation": operation,
+                "rule": rule,
+            }
+        )
     return entries
 
 
@@ -472,14 +567,16 @@ def _clean_column_names(
     if rename_map:
         df = df.rename(columns=rename_map)
         for old_name, new_name in rename_map.items():
-            audit.append({
-                "row": 0,
-                "column": old_name,
-                "original_value": old_name,
-                "new_value": new_name,
-                "operation": "clean_column_names",
-                "rule": "Column name normalised (NBSP/whitespace removed)",
-            })
+            audit.append(
+                {
+                    "row": 0,
+                    "column": old_name,
+                    "original_value": old_name,
+                    "new_value": new_name,
+                    "operation": "clean_column_names",
+                    "rule": "Column name normalised (NBSP/whitespace removed)",
+                }
+            )
     return df
 
 
@@ -491,14 +588,16 @@ def _drop_empty_columns(
     if empty_cols:
         df = df.drop(columns=empty_cols)
         for col_name in empty_cols:
-            audit.append({
-                "row": 0,
-                "column": col_name,
-                "original_value": "(entire column)",
-                "new_value": "<dropped>",
-                "operation": "drop_empty_columns",
-                "rule": "Column dropped: 100% null values",
-            })
+            audit.append(
+                {
+                    "row": 0,
+                    "column": col_name,
+                    "original_value": "(entire column)",
+                    "new_value": "<dropped>",
+                    "operation": "drop_empty_columns",
+                    "rule": "Column dropped: 100% null values",
+                }
+            )
     return df
 
 
@@ -530,21 +629,21 @@ def _drop_incomplete_responses(
     dropped_indices = df.index[drop_mask].tolist()
     if dropped_indices:
         for idx in dropped_indices:
-            audit.append({
-                "row": int(idx) + 1,
-                "column": progress_col,
-                "original_value": f"Progress={df.at[idx, progress_col]}",
-                "new_value": "<dropped>",
-                "operation": "drop_incomplete_responses",
-                "rule": f"Row dropped: incomplete survey response (Progress < {min_progress})",
-            })
+            audit.append(
+                {
+                    "row": int(idx) + 1,
+                    "column": progress_col,
+                    "original_value": f"Progress={df.at[idx, progress_col]}",
+                    "new_value": "<dropped>",
+                    "operation": "drop_incomplete_responses",
+                    "rule": f"Row dropped: incomplete survey response (Progress < {min_progress})",
+                }
+            )
         df = df.drop(index=dropped_indices).reset_index(drop=True)
     return df
 
 
-def _cap_extreme_values(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _cap_extreme_values(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     """Cap extreme values at a specified maximum, replacing with NaN.
 
     More direct than flag_extreme_outliers — specifically targets values above
@@ -570,43 +669,60 @@ def _cap_extreme_values(
     before = df[column].copy()
     df = df.copy()
     df.loc[extreme_mask, column] = pd.NA
-    audit.extend(_diff_column(before, df[column], column, "cap_extreme_values",
-                              f"Rule 4.3: Value exceeds reasonable maximum ({max_value}), set to null"))
-    logger.info("Capped %d extreme values in column '%s' (max=%s)", extreme_mask.sum(), column, max_value)
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "cap_extreme_values",
+            f"Rule 4.3: Value exceeds reasonable maximum ({max_value}), set to null",
+        )
+    )
+    logger.info(
+        "Capped %d extreme values in column '%s' (max=%s)", extreme_mask.sum(), column, max_value
+    )
     return df
 
 
-def _drop_rows(
-    df: pd.DataFrame, column: str | None, params: dict, audit: list
-) -> pd.DataFrame:
+def _drop_rows(df: pd.DataFrame, column: str | None, params: dict, audit: list) -> pd.DataFrame:
     """Drop specific rows by integer index (e.g. Qualtrics metadata header rows)."""
     indices = params.get("indices", [])
     if not indices:
         return df
-    valid = [i for i in indices if i < len(df)]
+    valid = [i for i in indices if isinstance(i, int) and 0 <= i < len(df)]
     for idx in valid:
         original = df.iloc[idx].to_dict()
-        audit.append({
-            "row_id": idx,
-            "column": "_row_",
-            "original_value": str(original),
-            "new_value": "<dropped>",
-            "rule": "drop_rows",
-        })
+        audit.append(
+            {
+                "row": int(idx) + 1,
+                "column": "_row_",
+                "original_value": str(original),
+                "new_value": "<dropped>",
+                "operation": "drop_rows",
+                "rule": "Row dropped by index (metadata/header row)",
+            }
+        )
     if valid:
         df = df.drop(index=valid).reset_index(drop=True)
     return df
 
 
-def _strip_whitespace(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
-    if column in df.columns and (df[column].dtype == object or pd.api.types.is_string_dtype(df[column])):
+def _strip_whitespace(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
+    if column in df.columns and (
+        df[column].dtype == object or pd.api.types.is_string_dtype(df[column])
+    ):
         before = df[column].copy()
         df = df.copy()
         df[column] = df[column].str.strip()
-        audit.extend(_diff_column(before, df[column], column, "strip_whitespace",
-                                  "Rule 1: Strip leading/trailing whitespace"))
+        audit.extend(
+            _diff_column(
+                before,
+                df[column],
+                column,
+                "strip_whitespace",
+                "Rule 1: Strip leading/trailing whitespace",
+            )
+        )
     return df
 
 
@@ -618,19 +734,22 @@ def _remove_currency_symbols(
         return df
     before = df[column].copy()
     df = df.copy()
-    df[column] = df[column].astype(str).str.replace(
-        r"[$€£¥₹]", "", regex=True
-    ).str.strip()
+    df[column] = df[column].astype(str).str.replace(r"[$€£¥₹]", "", regex=True).str.strip()
     # Restore actual nulls that became the string "nan"
     df[column] = df[column].replace("nan", pd.NA)
-    audit.extend(_diff_column(before, df[column], column, "remove_currency_symbols",
-                              "Rule 1.1: Delete currency symbols from values"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "remove_currency_symbols",
+            "Rule 1.1: Delete currency symbols from values",
+        )
+    )
     return df
 
 
-def _extract_number(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _extract_number(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     """Extract the first numeric value from mixed text/number strings."""
     if column not in df.columns:
         return df
@@ -651,14 +770,19 @@ def _extract_number(
         return val
 
     df[column] = df[column].apply(_parse)
-    audit.extend(_diff_column(before, df[column], column, "extract_number",
-                              "Rule 1.2: Extract numerical value from text string"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "extract_number",
+            "Rule 1.2: Extract numerical value from text string",
+        )
+    )
     return df
 
 
-def _convert_number_words(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _convert_number_words(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     """Convert written number words ('five', 'twenty') to digits."""
     if column not in df.columns:
         return df
@@ -688,8 +812,15 @@ def _convert_number_words(
         return result
 
     df[column] = df[column].apply(_word_to_num)
-    audit.extend(_diff_column(before, df[column], column, "convert_number_words",
-                              "Rule 1.3: Convert number words to digits"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "convert_number_words",
+            "Rule 1.3: Convert number words to digits",
+        )
+    )
     return df
 
 
@@ -716,14 +847,19 @@ def _convert_time_to_number(
         return val
 
     df[column] = df[column].apply(_parse_time)
-    audit.extend(_diff_column(before, df[column], column, "convert_time_to_number",
-                              "Rule 1.4: Convert time expressions to numeric values"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "convert_time_to_number",
+            "Rule 1.4: Convert time expressions to numeric values",
+        )
+    )
     return df
 
 
-def _free_to_zero(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _free_to_zero(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     """Convert 'Free' (case-insensitive) to numeric 0."""
     if column not in df.columns:
         return df
@@ -733,8 +869,15 @@ def _free_to_zero(
     # Convert column to object dtype so mixed str/int assignment works
     df[column] = df[column].astype(object)
     df.loc[mask, column] = 0
-    audit.extend(_diff_column(before, df[column], column, "free_to_zero",
-                              "Rule 2.1: 'Free' entry converted to numeric 0"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "free_to_zero",
+            "Rule 2.1: 'Free' entry converted to numeric 0",
+        )
+    )
     return df
 
 
@@ -745,9 +888,7 @@ _VAGUE_PATTERNS = re.compile(
 )
 
 
-def _remove_vague_entries(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _remove_vague_entries(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     """Null out vague, unquantifiable entries."""
     if column not in df.columns:
         return df
@@ -767,8 +908,15 @@ def _remove_vague_entries(
 
     mask = df[column].apply(_is_vague)
     df.loc[mask, column] = pd.NA
-    audit.extend(_diff_column(before, df[column], column, "remove_vague_entries",
-                              "Rule 2.2: Vague/unquantifiable entry removed (set to null)"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "remove_vague_entries",
+            "Rule 2.2: Vague/unquantifiable entry removed (set to null)",
+        )
+    )
     return df
 
 
@@ -799,8 +947,15 @@ def _sum_composite_expenses(
             return val
 
     df[column] = df[column].apply(_sum_expenses)
-    audit.extend(_diff_column(before, df[column], column, "sum_composite_expenses",
-                              "Rule 3.1: Composite expense list extracted and summed"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "sum_composite_expenses",
+            "Rule 3.1: Composite expense list extracted and summed",
+        )
+    )
     return df
 
 
@@ -816,7 +971,9 @@ def _flag_extreme_outliers(
     if column not in df.columns:
         return df
 
-    threshold = params.get("threshold", 5.0)   # modified Z-score threshold — 5.0 is forgiving enough for normal spend variation
+    threshold = params.get(
+        "threshold", 5.0
+    )  # modified Z-score threshold — 5.0 is forgiving enough for normal spend variation
     flag_col = params.get("flag_column", "_flagged")
 
     # Try to work with numeric values even if column is still object dtype
@@ -846,7 +1003,7 @@ def _flag_extreme_outliers(
     if not extreme_mask.any():
         return df
 
-    upper = df.loc[extreme_mask, column].min()   # for audit message
+    upper = df.loc[extreme_mask, column].min()  # for audit message
 
     before = df[column].copy()
     df = df.copy()
@@ -860,8 +1017,15 @@ def _flag_extreme_outliers(
     ).str.strip()
     df.loc[extreme_mask, column] = pd.NA
 
-    audit.extend(_diff_column(before, df[column], column, "flag_extreme_outliers",
-                              f"Rule 4.1: Extreme outlier (≥{upper}) removed and row flagged for review"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "flag_extreme_outliers",
+            f"Rule 4.1: Extreme outlier (≥{upper}) removed and row flagged for review",
+        )
+    )
     logger.info("Flagged %d extreme outliers in column '%s'", extreme_mask.sum(), column)
     return df
 
@@ -902,22 +1066,22 @@ def _flag_contextual_fraud(
     ).str.strip()
 
     for idx in df.index[fraud_mask]:
-        audit.append({
-            "row": int(idx) + 1,
-            "column": column,
-            "original_value": df.at[idx, column],
-            "new_value": df.at[idx, column],          # value kept, only flagged
-            "operation": "flag_contextual_fraud",
-            "rule": f"Rule 4.2: {reason} (threshold: {threshold})",
-        })
+        audit.append(
+            {
+                "row": int(idx) + 1,
+                "column": column,
+                "original_value": df.at[idx, column],
+                "new_value": df.at[idx, column],  # value kept, only flagged
+                "operation": "flag_contextual_fraud",
+                "rule": f"Rule 4.2: {reason} (threshold: {threshold})",
+            }
+        )
 
     logger.info("Flagged %d rows for contextual fraud in column '%s'", fraud_mask.sum(), column)
     return df
 
 
-def _fill_null(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _fill_null(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     if column not in df.columns:
         return df
 
@@ -942,32 +1106,37 @@ def _fill_null(
     elif value is not None:
         df[column] = df[column].fillna(value)
 
-    audit.extend(_diff_column(before, df[column], column, "fill_null",
-                              f"Null value filled (strategy={strategy or 'value'})"))
+    audit.extend(
+        _diff_column(
+            before,
+            df[column],
+            column,
+            "fill_null",
+            f"Null value filled (strategy={strategy or 'value'})",
+        )
+    )
     return df
 
 
-def _drop_null(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _drop_null(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     if column in df.columns:
         dropped_indices = df.index[df[column].isna()].tolist()
         df = df.dropna(subset=[column]).reset_index(drop=True)
         for idx in dropped_indices:
-            audit.append({
-                "row": int(idx) + 1,
-                "column": column,
-                "original_value": None,
-                "new_value": None,
-                "operation": "drop_null",
-                "rule": "Row dropped: null value in required column",
-            })
+            audit.append(
+                {
+                    "row": int(idx) + 1,
+                    "column": column,
+                    "original_value": None,
+                    "new_value": None,
+                    "operation": "drop_null",
+                    "rule": "Row dropped: null value in required column",
+                }
+            )
     return df
 
 
-def _cast_type(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _cast_type(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     if column not in df.columns:
         return df
 
@@ -990,14 +1159,13 @@ def _cast_type(
         logger.warning("Failed to cast column '%s' to '%s': %s", column, target_type, exc)
         return df
 
-    audit.extend(_diff_column(before, df[column], column, "cast_type",
-                              f"Column cast to {target_type}"))
+    audit.extend(
+        _diff_column(before, df[column], column, "cast_type", f"Column cast to {target_type}")
+    )
     return df
 
 
-def _deduplicate(
-    df: pd.DataFrame, column: str | None, params: dict, audit: list
-) -> pd.DataFrame:
+def _deduplicate(df: pd.DataFrame, column: str | None, params: dict, audit: list) -> pd.DataFrame:
     subset = params.get("subset")
     if subset:
         dropped_indices = df.index[df.duplicated(subset=subset, keep="first")].tolist()
@@ -1006,42 +1174,41 @@ def _deduplicate(
         dropped_indices = df.index[df.duplicated(keep="first")].tolist()
         df = df.drop_duplicates().reset_index(drop=True)
     for idx in dropped_indices:
-        audit.append({
-            "row": int(idx) + 1,
-            "column": "(duplicate)",
-            "original_value": None,
-            "new_value": None,
-            "operation": "deduplicate",
-            "rule": "Row dropped: duplicate",
-        })
+        audit.append(
+            {
+                "row": int(idx) + 1,
+                "column": "(duplicate)",
+                "original_value": None,
+                "new_value": None,
+                "operation": "deduplicate",
+                "rule": "Row dropped: duplicate",
+            }
+        )
     return df
 
 
-def _rename_column(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _rename_column(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     new_name = params.get("new_name")
     if column in df.columns and new_name:
         df = df.rename(columns={column: new_name})
     return df
 
 
-def _standardize_values(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _standardize_values(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     mapping = params.get("mapping", {})
     if column in df.columns and mapping:
         before = df[column].copy()
         df = df.copy()
         df[column] = df[column].replace(mapping)
-        audit.extend(_diff_column(before, df[column], column, "standardize_values",
-                                  "Values standardized per mapping"))
+        audit.extend(
+            _diff_column(
+                before, df[column], column, "standardize_values", "Values standardized per mapping"
+            )
+        )
     return df
 
 
-def _remove_outliers(
-    df: pd.DataFrame, column: str, params: dict, audit: list
-) -> pd.DataFrame:
+def _remove_outliers(df: pd.DataFrame, column: str, params: dict, audit: list) -> pd.DataFrame:
     if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]):
         return df
 
@@ -1054,14 +1221,16 @@ def _remove_outliers(
     dropped_indices = df.index[out_mask].tolist()
     df = df[(df[column] >= lower) & (df[column] <= upper)].reset_index(drop=True)
     for idx in dropped_indices:
-        audit.append({
-            "row": int(idx) + 1,
-            "column": column,
-            "original_value": None,
-            "new_value": None,
-            "operation": "remove_outliers",
-            "rule": "Row dropped: IQR outlier",
-        })
+        audit.append(
+            {
+                "row": int(idx) + 1,
+                "column": column,
+                "original_value": None,
+                "new_value": None,
+                "operation": "remove_outliers",
+                "rule": "Row dropped: IQR outlier",
+            }
+        )
     return df
 
 
@@ -1124,7 +1293,8 @@ def execute_cleaning_plan(
 
     logger.info(
         "Executing cleaning plan with %d steps on DataFrame %s",
-        len(steps), original_shape,
+        len(steps),
+        original_shape,
     )
 
     for i, step in enumerate(steps):
@@ -1136,12 +1306,14 @@ def execute_cleaning_plan(
         executor = _OPERATION_MAP.get(operation)
         if executor is None:
             logger.warning("Skipping unknown operation '%s' at step %d", operation, i)
-            failed_steps.append({
-                "step_index": i,
-                "operation": operation,
-                "column": column,
-                "error": f"Unknown operation '{operation}'",
-            })
+            failed_steps.append(
+                {
+                    "step_index": i,
+                    "operation": operation,
+                    "column": column,
+                    "error": f"Unknown operation '{operation}'",
+                }
+            )
             continue
 
         try:
@@ -1149,21 +1321,31 @@ def execute_cleaning_plan(
             df = executor(df, column, params, audit_log)
             logger.info(
                 "Step %d/%d [%s] on '%s': %s -> %s | %s",
-                i + 1, len(steps), operation, column,
-                before_shape, df.shape, description,
+                i + 1,
+                len(steps),
+                operation,
+                column,
+                before_shape,
+                df.shape,
+                description,
             )
         except Exception as exc:
             logger.error("Step %d/%d [%s] failed: %s", i + 1, len(steps), operation, exc)
-            failed_steps.append({
-                "step_index": i,
-                "operation": operation,
-                "column": column,
-                "error": str(exc),
-            })
+            failed_steps.append(
+                {
+                    "step_index": i,
+                    "operation": operation,
+                    "column": column,
+                    "error": str(exc),
+                }
+            )
             continue
 
     logger.info(
         "Cleaning complete: %s -> %s | %d cells modified | %d steps failed",
-        original_shape, df.shape, len(audit_log), len(failed_steps),
+        original_shape,
+        df.shape,
+        len(audit_log),
+        len(failed_steps),
     )
     return df, audit_log, failed_steps

@@ -19,7 +19,11 @@ JOB_ID = str(uuid.uuid4())
 
 SIMPLE_CSV = "id,name,score\n1,Alice,100\n2,Bob,85\n3,Carol,90\n"
 SIMPLE_STEPS = [
-    {"operation": "strip_whitespace", "column": "name", "description": "Strip whitespace from name"},
+    {
+        "operation": "strip_whitespace",
+        "column": "name",
+        "description": "Strip whitespace from name",
+    },
 ]
 
 
@@ -112,6 +116,7 @@ _P_AGENT = "app.services.verification_agent.run_verification_agent"
 def _call_task(dataset_id: str, job_id: str, steps_json: str):
     """Call the clean_dataset task, bypassing Celery."""
     from app.tasks.cleaning_task import clean_dataset
+
     return clean_dataset.__wrapped__(dataset_id, job_id, steps_json)
 
 
@@ -121,7 +126,6 @@ def _call_task(dataset_id: str, job_id: str, steps_json: str):
 
 
 class TestCleanDatasetTask:
-
     @patch(_P_S3)
     @patch(_P_DOWNLOAD)
     @patch(_P_VALIDATE, return_value=True)
@@ -268,13 +272,14 @@ class TestCleanDatasetTask:
     @patch(_P_DOWNLOAD)
     @patch(_P_VALIDATE, return_value=False)
     @patch(_P_ENGINE)
-    def test_cleaning_task_file_validation_rejects_bad_file(
+    def test_deterministic_error_fails_immediately_without_retry(
         self,
         mock_engine,
         mock_validate,
         mock_download,
         mock_progress,
     ):
+        """Validation errors can't be fixed by retrying — fail fast, once."""
         mock_engine.return_value = MagicMock()
         mock_download.return_value = b"PK\x03\x04not-really-csv"
         dataset = _make_mock_dataset(filename="data.csv")
@@ -283,7 +288,40 @@ class TestCleanDatasetTask:
 
         with (
             patch("sqlalchemy.orm.Session") as mock_session_cls,
-            patch.object(clean_dataset, "retry", side_effect=Exception("retry-called")) as mock_retry,
+            patch.object(
+                clean_dataset, "retry", side_effect=Exception("retry-called")
+            ) as mock_retry,
+        ):
+            _setup_session_mock(mock_session_cls, dataset)
+
+            with pytest.raises(ValueError, match="does not match"):
+                _call_task(DATASET_ID, JOB_ID, json.dumps(SIMPLE_STEPS))
+
+        mock_retry.assert_not_called()
+        statuses = [c.args[1] for c in mock_progress.call_args_list]
+        assert "failed" in statuses
+
+    @patch(_P_PROGRESS)
+    @patch(_P_DOWNLOAD)
+    @patch(_P_ENGINE)
+    def test_transient_error_retries_without_marking_failed(
+        self,
+        mock_engine,
+        mock_download,
+        mock_progress,
+    ):
+        """Transient errors retry; the job must NOT flip to failed in between."""
+        mock_engine.return_value = MagicMock()
+        mock_download.side_effect = ConnectionError("storage briefly unavailable")
+        dataset = _make_mock_dataset()
+
+        from app.tasks.cleaning_task import clean_dataset
+
+        with (
+            patch("sqlalchemy.orm.Session") as mock_session_cls,
+            patch.object(
+                clean_dataset, "retry", side_effect=Exception("retry-called")
+            ) as mock_retry,
         ):
             _setup_session_mock(mock_session_cls, dataset)
 
@@ -291,3 +329,90 @@ class TestCleanDatasetTask:
                 _call_task(DATASET_ID, JOB_ID, json.dumps(SIMPLE_STEPS))
 
         mock_retry.assert_called_once()
+        statuses = [c.args[1] for c in mock_progress.call_args_list]
+        assert "failed" not in statuses
+
+    @patch(_P_PROGRESS)
+    @patch(_P_DOWNLOAD)
+    @patch(_P_ENGINE)
+    def test_transient_error_marks_failed_when_retries_exhausted(
+        self,
+        mock_engine,
+        mock_download,
+        mock_progress,
+    ):
+        mock_engine.return_value = MagicMock()
+        mock_download.side_effect = ConnectionError("storage down")
+        dataset = _make_mock_dataset()
+
+        from app.tasks.cleaning_task import clean_dataset
+
+        clean_dataset.push_request(retries=clean_dataset.max_retries)
+        try:
+            with (
+                patch("sqlalchemy.orm.Session") as mock_session_cls,
+                patch.object(
+                    clean_dataset, "retry", side_effect=Exception("retry-called")
+                ) as mock_retry,
+            ):
+                _setup_session_mock(mock_session_cls, dataset)
+
+                with pytest.raises(ConnectionError, match="storage down"):
+                    _call_task(DATASET_ID, JOB_ID, json.dumps(SIMPLE_STEPS))
+        finally:
+            clean_dataset.pop_request()
+
+        mock_retry.assert_not_called()
+        statuses = [c.args[1] for c in mock_progress.call_args_list]
+        assert "failed" in statuses
+
+    @patch(_P_S3)
+    @patch(_P_DOWNLOAD)
+    @patch(_P_VALIDATE, return_value=True)
+    @patch(_P_PROGRESS)
+    @patch(_P_VERIFY)
+    @patch(_P_EXEC_PLAN)
+    @patch(_P_ENGINE)
+    @patch(_P_AGENT)
+    def test_invalid_remediation_steps_are_dropped_not_executed(
+        self,
+        mock_agent,
+        mock_engine,
+        mock_execute_plan,
+        mock_verify,
+        mock_progress,
+        mock_validate,
+        mock_download,
+        mock_s3,
+    ):
+        """Agent remediation steps go through the plan validator first."""
+        mock_engine.return_value = MagicMock()
+        mock_download.return_value = SIMPLE_CSV.encode()
+
+        cleaned_df = pd.read_csv(io.BytesIO(SIMPLE_CSV.encode()))
+        mock_execute_plan.return_value = (cleaned_df, [], [])
+
+        mock_verify.return_value = _make_verification_report(
+            overall_passed=False, audit_completeness=0.5
+        )
+        mock_agent.return_value = _make_agent_result(
+            passed=False,
+            remediation_steps=[
+                {
+                    "operation": "invented_op",
+                    "column": "score",
+                    "params": {},
+                    "description": "bad",
+                }
+            ],
+        )
+        mock_s3.return_value = MagicMock()
+        dataset = _make_mock_dataset()
+
+        with patch("sqlalchemy.orm.Session") as mock_session_cls:
+            _setup_session_mock(mock_session_cls, dataset)
+            result = _call_task(DATASET_ID, JOB_ID, json.dumps(SIMPLE_STEPS))
+
+        assert result["status"] == "completed"
+        # Initial plan executed once; the invalid remediation step was dropped
+        assert mock_execute_plan.call_count == 1
