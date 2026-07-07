@@ -18,7 +18,7 @@ from app.models.dataset import Dataset
 from app.models.job import Job
 from app.schemas import CleaningStep, JobResponse, VerificationResult
 from app.services.storage import download_file_bytes
-from app.utils.dataframe import read_dataframe
+from app.utils.dataframe import read_dataframe, to_sample_records
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +65,7 @@ def _read_all_rows(file_bytes: bytes, filename: str, max_rows: int = 500) -> lis
         head = df.head(250)
         rest = df.iloc[250:].sample(min(250, len(df) - 250), random_state=42)
         df = pd.concat([head, rest]).reset_index(drop=True)
-    return df.fillna("").to_dict(orient="records")
+    return to_sample_records(df)
 
 
 async def _get_dataset_or_404(
