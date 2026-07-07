@@ -17,17 +17,11 @@ export default function Settings() {
   const setTheme = useAppStore((s) => s.setTheme);
 
   const handleTheme = (value: ThemeOption) => {
-    if (value === "system") {
-      const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      setTheme(prefersDark ? "dark" : "light");
-    } else {
-      setTheme(value);
-    }
-    if (value === "dark" || (value === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches)) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
+    setTheme(value);
+    const effectiveDark =
+      value === "dark" ||
+      (value === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    document.documentElement.classList.toggle("dark", effectiveDark);
   };
 
   return (
