@@ -52,5 +52,31 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: true,
+    coverage: {
+      provider: "v8",
+      reporter: ["text-summary", "lcov"],
+      // Count every source file, not just those a test happens to import, so
+      // the total reflects real coverage and untested modules can't hide.
+      all: true,
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: [
+        "src/**/*.test.{ts,tsx}",
+        "src/test/**",
+        "src/main.tsx",
+        "src/vite-env.d.ts",
+        "src/**/*.d.ts",
+        "src/types/**",
+        "src/components/ui/**", // vendored shadcn/radix primitives
+      ],
+      // Regression floor — honest to the current suite, ratcheted up as the
+      // dark areas (Chat routing, hooks) get tests. Not aspirational: CI fails
+      // below these.
+      thresholds: {
+        statements: 13,
+        branches: 10,
+        functions: 18,
+        lines: 13,
+      },
+    },
   },
 });

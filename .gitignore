@@ -34,6 +34,8 @@ docker-compose.override.yml
 .pytest_cache/
 htmlcov/
 .coverage
+coverage.xml
+coverage/
 
 # MinIO data (local dev)
 minio-data/

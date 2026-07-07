@@ -6,6 +6,7 @@
     "build:web": "pnpm --filter @datapilot/web build",
     "lint:web": "pnpm --filter @datapilot/web lint",
     "typecheck:web": "pnpm --filter @datapilot/web tsc --noEmit",
-    "test:web": "pnpm --filter @datapilot/web test"
+    "test:web": "pnpm --filter @datapilot/web test",
+    "test:web:coverage": "pnpm --filter @datapilot/web test:coverage"
   }
 }
