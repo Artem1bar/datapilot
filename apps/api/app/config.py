@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -56,8 +57,9 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:5174"
 
-    # Deployment
-    ENVIRONMENT: str = "development"  # development | staging | production
+    # Deployment. Typed so a typo (e.g. "prod") fails validation at startup
+    # rather than silently re-enabling the dev auth bypass.
+    ENVIRONMENT: Literal["development", "staging", "production"] = "development"
 
     @property
     def cors_origins_list(self) -> list[str]:
@@ -80,6 +82,12 @@ class Settings(BaseSettings):
             problems.append("DATABASE_URL uses the default local credentials")
         if not self.ANTHROPIC_API_KEY:
             problems.append("ANTHROPIC_API_KEY is not set")
+        if not self.CLERK_JWT_ISSUER:
+            problems.append("CLERK_JWT_ISSUER is not set (auth would reject every request)")
+        if not self.CLERK_WEBHOOK_SECRET:
+            problems.append("CLERK_WEBHOOK_SECRET is not set (webhooks would be rejected)")
+        if self.DEV_AUTH_BYPASS:
+            problems.append("DEV_AUTH_BYPASS must be false in production")
         return problems
 
 
