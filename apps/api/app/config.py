@@ -29,6 +29,13 @@ class Settings(BaseSettings):
     # Clerk
     CLERK_SECRET_KEY: str = ""
     CLERK_PUBLISHABLE_KEY: str = ""
+    # Clerk Frontend API URL / JWT issuer, e.g. https://xxx.clerk.accounts.dev.
+    # Session JWTs are verified against {issuer}/.well-known/jwks.json.
+    CLERK_JWT_ISSUER: str = ""
+
+    # Auth: when true (and NOT production) every request resolves to a local dev
+    # user with no token. Ignored in production, which always requires a JWT.
+    DEV_AUTH_BYPASS: bool = True
 
     # Supabase (optional — replaces Clerk auth + provides DB + storage)
     SUPABASE_URL: str = ""
