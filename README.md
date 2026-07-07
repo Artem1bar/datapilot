@@ -37,7 +37,6 @@ apps/
         └── tasks/      # Background job workers
 
 packages/               # Shared TypeScript types
-supabase/               # Auth and DB migrations
 ```
 
 ## Tech Stack
@@ -47,7 +46,7 @@ supabase/               # Auth and DB migrations
 | Frontend | React 19, Vite, TypeScript, Tailwind CSS, Framer Motion |
 | Backend | Python, FastAPI, SQLAlchemy (async), Alembic |
 | AI | Anthropic Claude — Opus 4.8 (cleaning plan), Sonnet 4.6 (manipulation, verification), Haiku 4.5 (analysis, dictionary) |
-| Auth | Supabase Auth / Clerk |
+| Auth | Clerk |
 | Storage | MinIO / Cloudflare R2 (file storage) |
 | Database | PostgreSQL |
 | Cache / Pub-Sub | Redis |
@@ -74,7 +73,8 @@ docker-compose up -d
 
 # 3. Configure environment
 cp .env.example .env
-# Required: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# Required: ANTHROPIC_API_KEY
+# For production auth: CLERK_JWT_ISSUER, CLERK_WEBHOOK_SECRET (and set DEV_AUTH_BYPASS=false)
 
 # 4. Install Python dependencies and run migrations
 cd apps/api
@@ -101,9 +101,9 @@ The app will be available at `http://localhost:5173`.
 | `R2_ENDPOINT_URL` | MinIO/R2 endpoint for file storage |
 | `R2_ACCESS_KEY_ID` | Storage access key |
 | `R2_SECRET_ACCESS_KEY` | Storage secret key |
-| `SUPABASE_URL` | Supabase project URL (auth) |
-| `SUPABASE_ANON_KEY` | Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `CLERK_JWT_ISSUER` | Clerk Frontend API URL / JWT issuer (production auth) |
+| `CLERK_WEBHOOK_SECRET` | Svix signing secret for Clerk user-sync webhooks |
+| `DEV_AUTH_BYPASS` | `true` locally to skip auth; ignored in production |
 
 ## Tests
 

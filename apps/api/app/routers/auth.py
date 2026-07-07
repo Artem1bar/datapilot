@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from svix.webhooks import Webhook, WebhookVerificationError
 
 from app.config import settings
 from app.db.engine import get_db
@@ -20,34 +19,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["auth"])
 
 
-def _verify_webhook_signature(
-    payload: bytes,
-    signature: str | None,
-    secret: str,
-) -> bool:
-    """Verify the Clerk/Svix webhook signature.
-
-    Clerk uses Svix for webhook delivery. The signature is an HMAC-SHA256
-    of the raw body using the webhook signing secret. This is a simplified
-    check; a production implementation should use the ``svix`` library for
-    full timestamp + signature verification.
-    """
-    if not signature or not secret:
-        return False
-    expected = hmac.new(
-        secret.encode(),
-        payload,
-        hashlib.sha256,
-    ).hexdigest()
-    # Svix sends multiple signatures separated by spaces; check each
-    for sig_part in signature.split(" "):
-        # Strip the version prefix (e.g. "v1,<base64>")
-        clean = sig_part.split(",")[-1] if "," in sig_part else sig_part
-        if hmac.compare_digest(expected, clean):
-            return True
-    return False
-
-
 @router.post("/webhook", status_code=status.HTTP_200_OK)
 async def clerk_webhook(
     request: Request,
@@ -56,27 +27,44 @@ async def clerk_webhook(
     svix_timestamp: str | None = Header(None, alias="svix-timestamp"),
     svix_signature: str | None = Header(None, alias="svix-signature"),
 ) -> dict[str, str]:
-    """Handle Clerk webhook events (user.created, user.updated, user.deleted)."""
+    """Handle Clerk webhook events (user.created, user.updated, user.deleted).
+
+    Verified with svix (signature + timestamp, replay-resistant). Fails closed:
+    without the signing secret every request is rejected.
+    """
     body = await request.body()
 
-    # Signature verification placeholder -- in production use the svix library
-    # For now we log a warning if we cannot verify
-    if settings.CLERK_SECRET_KEY:
-        valid = _verify_webhook_signature(body, svix_signature, settings.CLERK_SECRET_KEY)
-        if not valid:
-            logger.warning("Webhook signature verification failed")
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid webhook signature",
-            )
+    if not settings.CLERK_WEBHOOK_SECRET:
+        logger.error("CLERK_WEBHOOK_SECRET is not configured; rejecting webhook")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Webhook verification is not configured",
+        )
 
-    payload: dict[str, Any] = await request.json()
+    try:
+        payload: dict[str, Any] = Webhook(settings.CLERK_WEBHOOK_SECRET).verify(
+            body,
+            {
+                "svix-id": svix_id or "",
+                "svix-timestamp": svix_timestamp or "",
+                "svix-signature": svix_signature or "",
+            },
+        )
+    except WebhookVerificationError as exc:
+        logger.warning("Webhook signature verification failed: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid webhook signature",
+        ) from exc
+
     event_type: str = payload.get("type", "")
     data: dict[str, Any] = payload.get("data", {})
 
     clerk_id: str | None = data.get("id")
     if not clerk_id:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user id in webhook data")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Missing user id in webhook data"
+        )
 
     if event_type == "user.created":
         email = _extract_email(data)
