@@ -46,6 +46,9 @@ class Settings(BaseSettings):
     ANALYSIS_MODEL: str = "claude-haiku-4-5-20251001"
     DICTIONARY_MODEL: str = "claude-haiku-4-5-20251001"
 
+    # Uploads — reject files larger than this (bytes). Default 50 MB.
+    MAX_UPLOAD_BYTES: int = 50 * 1024 * 1024
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:5174"
 

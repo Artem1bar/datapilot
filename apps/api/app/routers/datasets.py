@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import delete as sqla_delete
 from sqlalchemy import select
 
+from app.config import settings
 from app.deps import CurrentUser, DBSession
 from app.models.chat_session import ChatSession
 from app.models.dataset import Dataset
@@ -32,10 +33,29 @@ from app.services.storage import (
     upload_file_bytes,
 )
 from app.utils.dataframe import read_dataframe
+from app.utils.file_validation import validate_file_content
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["datasets"])
+
+
+def _validate_upload(data: bytes, filename: str) -> None:
+    """Reject oversize or content-mismatched uploads. Raises HTTPException."""
+    if len(data) > settings.MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                "File exceeds the maximum upload size of "
+                f"{settings.MAX_UPLOAD_BYTES // (1024 * 1024)} MB"
+            ),
+        )
+    if not validate_file_content(data, filename):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File content does not match its extension or is empty/corrupt",
+        )
+
 
 _CONTENT_TYPES = {
     ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -71,6 +91,9 @@ async def upload_dataset(
     data = await file.read()
     filename = file.filename or "upload.csv"
     content_type = file.content_type or "application/octet-stream"
+
+    # Reject oversize / content-mismatched files before touching storage.
+    _validate_upload(data, filename)
 
     r2_key = generate_upload_key(user.id, filename)
     upload_file_bytes(r2_key, data, content_type)
@@ -168,6 +191,28 @@ async def confirm_upload(
         dataset.file_size_bytes = body.file_size_bytes
     if body.filename:
         dataset.filename = body.filename
+
+    # Validate the object now that it has landed in storage (magic bytes + real
+    # size, not the client-reported size). Reject and clean up bad content.
+    try:
+        landed = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
+    except Exception as exc:
+        logger.error("Failed to read uploaded object %s for validation: %s", dataset.r2_key, exc)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Failed to read the uploaded file for validation",
+        )
+    try:
+        _validate_upload(landed, dataset.filename)
+    except HTTPException:
+        # Remove the bad object and mark the dataset errored so it isn't retried blindly.
+        try:
+            await asyncio.to_thread(delete_object, dataset.r2_key)
+        except Exception:
+            logger.warning("Failed to delete invalid upload %s", dataset.r2_key)
+        dataset.status = "error"
+        await db.commit()
+        raise
 
     dataset.status = "profiling"
 
