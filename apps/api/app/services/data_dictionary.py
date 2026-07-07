@@ -9,6 +9,7 @@ from typing import Any
 from anthropic import Anthropic
 
 from app.config import settings
+from app.services.structured_output import request_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,40 @@ Example output format:
     }
   ]
 }"""
+
+
+# Forcing this tool call makes the SDK hand back an already-parsed dict, instead
+# of scraping JSON from free text (which broke when the model appended prose
+# after the object — "Extra data" JSONDecodeError).
+_DICTIONARY_TOOL: dict[str, Any] = {
+    "name": "submit_data_dictionary",
+    "description": "Return the generated data dictionary for the dataset.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "dataset_summary": {
+                "type": "string",
+                "description": "2-3 sentence overview of the dataset",
+            },
+            "columns": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "name": {"type": "string"},
+                        "description": {"type": "string"},
+                        "business_meaning": {"type": "string"},
+                        "data_type": {"type": "string"},
+                        "constraints": {"type": "array", "items": {"type": "string"}},
+                        "notes": {"type": "string"},
+                    },
+                    "required": ["name", "description"],
+                },
+            },
+        },
+        "required": ["dataset_summary", "columns"],
+    },
+}
 
 
 def generate_data_dictionary(
@@ -90,9 +125,9 @@ def generate_data_dictionary(
     )
 
     try:
-        response = client.messages.create(
+        result = request_tool_call(
+            client,
             model=settings.DICTIONARY_MODEL,
-            max_tokens=4096,
             system=_SYSTEM_PROMPT,
             messages=[
                 {
@@ -100,17 +135,10 @@ def generate_data_dictionary(
                     "content": f"Generate a data dictionary for this dataset:\n{context}",
                 }
             ],
+            tool=_DICTIONARY_TOOL,
+            max_tokens=4096,
         )
-        text = response.content[0].text.strip()
-
-        # Parse JSON
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-        return json.loads(text)
+        return result.input
     except Exception:
         logger.exception("Failed to generate data dictionary")
         return {"dataset_summary": "Failed to generate data dictionary", "columns": []}

@@ -25,7 +25,7 @@ def _get_client() -> anthropic.Anthropic:
     """Return a lazily-initialized Anthropic client singleton."""
     global _anthropic_client
     if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key or None)
+        _anthropic_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY or None)
     return _anthropic_client
 
 
