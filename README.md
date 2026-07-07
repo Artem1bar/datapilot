@@ -118,9 +118,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**508 tests total** (451 backend + 57 frontend).
+**566 tests total** (455 backend + 111 frontend).
 
-### Backend (451 tests) — run from `apps/api/`
+### Backend (455 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -153,20 +153,35 @@ uv run pytest
 | `test_datasets_router.py` | Dataset download/delete endpoints, JSON-safe previews |
 | `test_progress_reporting.py` / `test_task_db.py` | Per-stage job progress persistence, shared worker DB engine |
 | `test_structured_output.py` | Forced-tool-use helper: rate-limit retries, confidence coercion, error paths |
+| `test_auth_jwt.py` | Clerk session-JWT verification (JWKS/RS256, issuer + expiry, bypass rules) |
+| `test_ownership.py` | Cross-user isolation — user B requesting user A's resources gets 404 |
+| `test_settings.py` / `test_cleaning_plan_prefs.py` | User-preferences `/settings` API and prefs threaded into plan generation |
+| `test_upload_validation.py` | Upload size cap + magic-byte validation on the upload routes |
+| `test_export_sanitization.py` | CSV/Excel formula-injection sanitization on export |
+| `test_data_driven_caps.py` / `test_domain_detection.py` | Percentile-based caps and domain gating (survey/expense heuristics off by default) |
+| `test_ai_budget.py` / `test_ai_endpoint_rate_limits.py` | AI kill-switch, per-user daily budget, and rate limits on open AI endpoints |
+| `test_cleanup_task.py` | Daily orphaned-upload purge (data lifecycle) |
+| `test_app_boot.py` | App wiring smoke test — routers mounted, middleware installed |
 
-### Frontend (57 tests) — run from `apps/web/`
+### Frontend (111 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
-pnpm test
+pnpm test              # or: pnpm test:coverage
 ```
 
 | File | What it covers |
 |------|---------------|
 | `src/lib/utils.test.ts` | `cn()` Tailwind class-merge utility |
+| `src/lib/intent.test.ts` | Chat intent routing (clean/manipulate/analyze/report/chat) + precedence |
+| `src/lib/progress.test.ts` | Cleaning progress → stage-label thresholds |
+| `src/lib/upload.test.ts` | Client-side upload validation (size cap, accepted types) |
 | `src/stores/app-store.test.ts` | Sidebar, chart panel, chart list, and theme state |
 | `src/stores/session-store.test.ts` | Session CRUD, messages, workflow step transitions |
 | `src/components/cards/CleaningPlanCard.test.tsx` | Plan card rendering, step display, accept/reject actions |
+| `src/components/cards/ErrorCard.test.tsx` | Error card rendering + retry re-dispatch |
+| `src/components/chat/ChatStream.test.tsx` | Message stream rendering |
+| `src/components/settings/CleaningSettings.test.tsx` | Cleaning settings form wired to the `/settings` API |
 
 ## API Overview
 
