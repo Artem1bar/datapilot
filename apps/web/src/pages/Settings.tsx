@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Sun, Moon, Monitor } from "lucide-react";
 import { useAppStore } from "@/stores/app-store";
 import { cn } from "@/lib/utils";
+import { CleaningSettings } from "@/components/settings/CleaningSettings";
 
 type ThemeOption = "light" | "dark" | "system";
 
@@ -34,6 +35,7 @@ export default function Settings() {
       <Tabs defaultValue="appearance" className="mt-6">
         <TabsList>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="cleaning">Cleaning</TabsTrigger>
           <TabsTrigger value="about">About</TabsTrigger>
         </TabsList>
 
@@ -59,6 +61,10 @@ export default function Settings() {
               ))}
             </div>
           </div>
+        </TabsContent>
+
+        <TabsContent value="cleaning" className="mt-5">
+          <CleaningSettings />
         </TabsContent>
 
         <TabsContent value="about" className="mt-5">
