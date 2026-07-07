@@ -16,6 +16,7 @@ import type { DatasetResponse, JobResponse, CleaningStep } from "@/types";
 interface StepWithToggle extends CleaningStep {
   accepted: boolean;
   confidence?: number;
+  rationale?: string;
 }
 
 const operationColors: Record<string, string> = {
@@ -69,7 +70,7 @@ export default function Clean() {
   const [userInstructions, setUserInstructions] = useState<string>("");
 
   const loadStepsFromJob = useCallback((job: JobResponse, append = false) => {
-    const result = job.result_json as { steps?: (CleaningStep & { confidence?: number })[]; summary?: string } | null;
+    const result = job.result_json as { steps?: (CleaningStep & { confidence?: number; rationale?: string })[]; summary?: string } | null;
     if (result?.steps) {
       const newSteps = result.steps.map((s) => ({ ...s, accepted: true }));
       if (append) {
@@ -197,7 +198,9 @@ export default function Clean() {
 
   const handleApply = () => {
     if (acceptedCount === 0) return;
-    const toSend = acceptedSteps.map(({ accepted: _accepted, confidence: _confidence, ...rest }) => rest);
+    const toSend = acceptedSteps.map(
+      ({ accepted: _accepted, confidence: _confidence, rationale: _rationale, ...rest }) => rest,
+    );
     applyMutation.mutate(toSend);
   };
 
@@ -287,10 +290,15 @@ export default function Clean() {
                       )}
                     </div>
                     <p className="text-[13px] leading-relaxed text-ink-secondary">{step.description}</p>
+                    {step.rationale && (
+                      <p className="text-[12px] leading-relaxed text-ink-muted">{step.rationale}</p>
+                    )}
                     {step.confidence != null && (
                       <div className="flex items-center gap-2">
-                        <Progress value={step.confidence} className="h-1 flex-1" />
-                        <span className="text-[11px] tabular-nums text-ink-muted">{step.confidence}%</span>
+                        <Progress value={Math.round(step.confidence * 100)} className="h-1 flex-1" />
+                        <span className="text-[11px] tabular-nums text-ink-muted">
+                          {Math.round(step.confidence * 100)}%
+                        </span>
                       </div>
                     )}
                   </div>

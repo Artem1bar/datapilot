@@ -1,8 +1,11 @@
-"""Tests for generate_cleaning_plan's validate-and-regenerate loop (Claude mocked)."""
+"""Tests for generate_cleaning_plan's validate-and-regenerate loop (Claude mocked).
+
+Plan generation forces a submit_cleaning_plan tool call, so the mocked responses
+carry a tool_use block whose ``.input`` is the plan dict.
+"""
 
 from __future__ import annotations
 
-import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -26,16 +29,20 @@ BAD_OP_STEP = {
 }
 
 
-def _response(text: str) -> MagicMock:
+def _plan(*steps: dict) -> dict:
+    return {"steps": list(steps), "summary": "s"}
+
+
+def _response(plan: dict, *, tool_id: str = "toolu_plan") -> MagicMock:
+    """Build a mock response whose content is a submit_cleaning_plan tool call."""
     block = MagicMock()
-    block.text = text
+    block.type = "tool_use"
+    block.name = "submit_cleaning_plan"
+    block.id = tool_id
+    block.input = plan
     response = MagicMock()
     response.content = [block]
     return response
-
-
-def _plan(*steps: dict) -> str:
-    return json.dumps({"steps": list(steps), "summary": "s", "estimated_row_impact": None})
 
 
 @patch("app.services.cleaning._load_system_prompt", return_value="system prompt")
@@ -50,6 +57,9 @@ class TestGenerateCleaningPlan:
 
         assert client.messages.create.call_count == 1
         assert steps[0]["operation"] == "strip_whitespace"
+        # The submit_cleaning_plan tool is forced.
+        call_kwargs = client.messages.create.call_args.kwargs
+        assert call_kwargs["tool_choice"] == {"type": "tool", "name": "submit_cleaning_plan"}
 
     def test_invalid_operation_regenerates_with_feedback(self, mock_get_client, _prompt):
         client = MagicMock()
@@ -63,9 +73,12 @@ class TestGenerateCleaningPlan:
 
         assert client.messages.create.call_count == 2
         assert steps[0]["operation"] == "strip_whitespace"
+        # The regenerate turn feeds the validator error back as a tool_result.
         retry_messages = client.messages.create.call_args_list[1].kwargs["messages"]
         assert retry_messages[1]["role"] == "assistant"
-        assert "hallucinated_op" in retry_messages[2]["content"]
+        tool_result = retry_messages[2]["content"][0]
+        assert tool_result["type"] == "tool_result"
+        assert "hallucinated_op" in tool_result["content"]
 
     def test_unknown_column_regenerates(self, mock_get_client, _prompt):
         bad_col = {
@@ -86,10 +99,11 @@ class TestGenerateCleaningPlan:
         assert client.messages.create.call_count == 2
         assert len(steps) == 1
 
-    def test_unparseable_response_regenerates(self, mock_get_client, _prompt):
+    def test_malformed_steps_regenerates(self, mock_get_client, _prompt):
+        # First call returns steps that are not an array of objects → rejected.
         client = MagicMock()
         client.messages.create.side_effect = [
-            _response("Sure, here is what I would do (no JSON at all)."),
+            _response({"steps": "not a list", "summary": "s"}),
             _response(_plan(GOOD_STEP)),
         ]
         mock_get_client.return_value = client
@@ -111,3 +125,31 @@ class TestGenerateCleaningPlan:
             generate_cleaning_plan(PROFILE, SAMPLES)
 
         assert client.messages.create.call_count == 2
+
+    def test_rationale_and_confidence_flow_through(self, mock_get_client, _prompt):
+        step = {
+            "operation": "strip_whitespace",
+            "column": "name",
+            "params": {},
+            "description": "Step 1: strip",
+            "rationale": "trailing spaces present",
+            "confidence": 0.8,
+        }
+        client = MagicMock()
+        client.messages.create.side_effect = [_response(_plan(step))]
+        mock_get_client.return_value = client
+
+        steps = generate_cleaning_plan(PROFILE, SAMPLES)
+
+        assert steps[0]["rationale"] == "trailing spaces present"
+        assert steps[0]["confidence"] == 0.8
+
+    def test_missing_confidence_becomes_none(self, mock_get_client, _prompt):
+        client = MagicMock()
+        client.messages.create.side_effect = [_response(_plan(GOOD_STEP))]
+        mock_get_client.return_value = client
+
+        steps = generate_cleaning_plan(PROFILE, SAMPLES)
+
+        assert steps[0]["confidence"] is None
+        assert steps[0]["rationale"] == ""

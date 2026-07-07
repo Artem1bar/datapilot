@@ -43,18 +43,21 @@ def _make_mock_dataset(
 def _make_verification_report(
     overall_passed: bool = True,
     audit_completeness: float = 0.95,
+    flags_remaining: list[str] | None = None,
 ):
     """Return a mock VerificationReport."""
+    flags_remaining = flags_remaining or []
     report = MagicMock()
     report.overall_passed = overall_passed
     report.audit_completeness = audit_completeness
+    report.flags_remaining = flags_remaining
     report.to_dict.return_value = {
         "overall_passed": overall_passed,
         "audit_completeness": audit_completeness,
         "flags_before": {},
         "flags_after": {},
         "flags_resolved": [],
-        "flags_remaining": [],
+        "flags_remaining": flags_remaining,
         "flags_new": [],
         "step_results": [],
         "failed_steps": [],
@@ -416,3 +419,102 @@ class TestCleanDatasetTask:
         assert result["status"] == "completed"
         # Initial plan executed once; the invalid remediation step was dropped
         assert mock_execute_plan.call_count == 1
+
+    @patch(_P_S3)
+    @patch(_P_DOWNLOAD)
+    @patch(_P_VALIDATE, return_value=True)
+    @patch(_P_PROGRESS)
+    @patch(_P_VERIFY)
+    @patch(_P_EXEC_PLAN)
+    @patch(_P_ENGINE)
+    @patch(_P_AGENT)
+    def test_remediation_stops_when_flags_do_not_shrink(
+        self,
+        mock_agent,
+        mock_engine,
+        mock_execute_plan,
+        mock_verify,
+        mock_progress,
+        mock_validate,
+        mock_download,
+        mock_s3,
+    ):
+        """A remediation round that doesn't reduce the remaining flags stops the
+        loop instead of burning a second verification-agent call."""
+        mock_engine.return_value = MagicMock()
+        mock_download.return_value = SIMPLE_CSV.encode()
+
+        cleaned_df = pd.read_csv(io.BytesIO(SIMPLE_CSV.encode()))
+        mock_execute_plan.return_value = (cleaned_df, [], [])
+
+        # The same flag survives before and after remediation → no progress.
+        # Exactly two verifications are expected (round 0 and round 1). The stall
+        # break must NOT trigger a redundant final re-verification — df is unchanged
+        # since round 1's top-of-loop verify — so only two reports are provided; a
+        # third verify call would raise StopIteration and fail this test.
+        mock_verify.side_effect = [
+            _make_verification_report(overall_passed=False, flags_remaining=["score"]),  # round 0
+            _make_verification_report(
+                overall_passed=False, flags_remaining=["score"]
+            ),  # round 1 → stall
+        ]
+        # Round 0 proposes a valid, column-optional remediation step.
+        mock_agent.return_value = _make_agent_result(
+            passed=False,
+            remediation_steps=[
+                {
+                    "operation": "clean_column_names",
+                    "column": None,
+                    "params": {},
+                    "description": "Step R1",
+                }
+            ],
+        )
+        mock_s3.return_value = MagicMock()
+        dataset = _make_mock_dataset()
+
+        with patch("sqlalchemy.orm.Session") as mock_session_cls:
+            _setup_session_mock(mock_session_cls, dataset)
+            result = _call_task(DATASET_ID, JOB_ID, json.dumps(SIMPLE_STEPS))
+
+        assert result["status"] == "completed"
+        # Agent ran once (round 0); round 1 short-circuits on the stall guard.
+        assert mock_agent.call_count == 1
+        # Main plan + exactly one remediation apply (round 1 never applies).
+        assert mock_execute_plan.call_count == 2
+        # Two verifications only — the stall break skips the redundant final pass.
+        assert mock_verify.call_count == 2
+
+
+class TestRemediationStalled:
+    """Unit tests for the remediation convergence guard."""
+
+    def test_first_round_never_stalls(self):
+        from app.tasks.cleaning_task import _remediation_stalled
+
+        assert _remediation_stalled({"a"}, None, False) is False
+
+    def test_no_remediation_applied_never_stalls(self):
+        from app.tasks.cleaning_task import _remediation_stalled
+
+        assert _remediation_stalled({"a"}, {"a", "b"}, False) is False
+
+    def test_flags_shrank_is_progress(self):
+        from app.tasks.cleaning_task import _remediation_stalled
+
+        assert _remediation_stalled({"a"}, {"a", "b"}, True) is False
+
+    def test_all_flags_resolved_is_progress(self):
+        from app.tasks.cleaning_task import _remediation_stalled
+
+        assert _remediation_stalled(set(), {"a"}, True) is False
+
+    def test_same_flags_is_stall(self):
+        from app.tasks.cleaning_task import _remediation_stalled
+
+        assert _remediation_stalled({"a"}, {"a"}, True) is True
+
+    def test_flags_grew_is_stall(self):
+        from app.tasks.cleaning_task import _remediation_stalled
+
+        assert _remediation_stalled({"a", "c"}, {"a"}, True) is True

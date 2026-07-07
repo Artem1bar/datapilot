@@ -8,18 +8,79 @@ from __future__ import annotations
 
 import json
 import logging
-import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from anthropic import Anthropic, RateLimitError
+from anthropic import Anthropic
 
 from app.config import settings
+from app.services.structured_output import coerce_confidence, request_tool_call
 
 logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "verification_system.txt"
+
+# Tool schema Claude must call to report its assessment. Forcing this tool call
+# (see structured_output.request_tool_call) means the SDK returns an already-
+# parsed dict instead of JSON we have to scrape out of free text.
+_VERIFICATION_TOOL: dict[str, Any] = {
+    "name": "submit_verification",
+    "description": "Report the results of independently verifying the cleaned dataset.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "passed": {
+                "type": "boolean",
+                "description": "True only if no CRITICAL or HIGH issues remain in the cleaned data.",
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Your confidence in this assessment, from 0.0 to 1.0.",
+            },
+            "issues_found": {
+                "type": "array",
+                "description": "Every remaining data-quality issue you found.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "column": {"type": ["string", "null"]},
+                        "issue": {"type": "string"},
+                        "severity": {
+                            "type": "string",
+                            "enum": ["CRITICAL", "HIGH", "MEDIUM", "LOW"],
+                        },
+                        "detail": {"type": "string"},
+                    },
+                    "required": ["issue", "severity"],
+                },
+            },
+            "recommendations": {
+                "type": "array",
+                "items": {"type": "string"},
+            },
+            "remediation_steps": {
+                "type": "array",
+                "description": "Concrete cleaning steps that fix each CRITICAL/HIGH issue.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {"type": "string"},
+                        "column": {"type": ["string", "null"]},
+                        "params": {
+                            "type": "object",
+                            "description": "Operation-specific parameters.",
+                        },
+                        "description": {"type": "string"},
+                    },
+                    "required": ["operation"],
+                },
+            },
+            "summary": {"type": "string"},
+        },
+        "required": ["passed", "confidence", "summary"],
+    },
+}
 
 # ---------------------------------------------------------------------------
 # Result dataclass
@@ -29,6 +90,7 @@ _SYSTEM_PROMPT_PATH = Path(__file__).parent.parent / "prompts" / "verification_s
 @dataclass(frozen=True)
 class AgentVerificationResult:
     """Result from the Claude verification agent."""
+
     passed: bool
     confidence: float  # 0.0 – 1.0
     issues_found: tuple[dict[str, Any], ...] = ()
@@ -95,7 +157,12 @@ def run_verification_agent(
     # Strategy: only send columns that have quality flags (not all 68+ columns).
 
     # Identify columns mentioned in quality flags
-    _meta_keys = {"qualtrics_header_row", "_dirty_column_names", "_empty_columns", "_incomplete_responses"}
+    _meta_keys = {
+        "qualtrics_header_row",
+        "_dirty_column_names",
+        "_empty_columns",
+        "_incomplete_responses",
+    }
     flagged_cols = {k for k in original_quality_flags if k not in _meta_keys}
 
     # Context columns (first 3 for identification)
@@ -126,7 +193,8 @@ def run_verification_agent(
 
     # Trim deterministic report — remove verbose step_results, keep summary
     slim_report = {
-        k: v for k, v in deterministic_report.items()
+        k: v
+        for k, v in deterministic_report.items()
         if k not in ("step_results",)  # step_results is huge and redundant
     }
 
@@ -146,83 +214,81 @@ def run_verification_agent(
         "1. Absurdly large values (>$50K hotels, >$100K gambling)\n"
         "2. String values that should be numeric\n"
         "3. Unresolved quality flags\n"
-        "Return JSON with remediation_steps for EVERY CRITICAL/HIGH issue."
+        "Call the submit_verification tool with your assessment, including "
+        "remediation_steps for EVERY CRITICAL/HIGH issue."
     )
 
     logger.info(
         "Requesting verification from Claude (model=claude-sonnet-4-6, flags=%d, steps=%d, "
         "sample_rows=%d, audit_entries=%d)",
-        len(original_quality_flags), len(steps_applied),
-        len(trimmed_rows), min(len(audit_log_sample), max_audit),
+        len(original_quality_flags),
+        len(steps_applied),
+        len(trimmed_rows),
+        min(len(audit_log_sample), max_audit),
     )
 
     client = _get_client()
 
-    # Retry with backoff on rate limit errors (keep waits short to avoid timeout)
-    max_retries = 2
-    for attempt in range(max_retries):
-        try:
-            response = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=4096,
-                system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}],
-                messages=[{"role": "user", "content": user_message}],
-            )
-            break
-        except RateLimitError as e:
-            if attempt < max_retries - 1:
-                wait_time = 15  # short wait — payload is already trimmed
-                logger.warning(
-                    "Rate limited on verification attempt %d/%d, waiting %ds: %s",
-                    attempt + 1, max_retries, wait_time, e,
-                )
-                time.sleep(wait_time)
-            else:
-                logger.error("Rate limit exhausted after %d retries", max_retries)
-                raise
-
-    response_text = response.content[0].text
-    logger.debug("Verification agent response: %s", response_text[:500])
-
-    parsed = _parse_agent_response(response_text)
-    return parsed
-
-
-def _parse_agent_response(text: str) -> AgentVerificationResult:
-    """Parse the JSON response from the verification agent."""
-    # Strip markdown code fences if present
-    cleaned = text.strip()
-    if cleaned.startswith("```"):
-        lines = cleaned.splitlines()
-        # Remove opening fence (e.g. ```json) and closing fence (```)
-        if lines and lines[0].strip().startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        cleaned = "\n".join(lines)
-
+    # Force a single submit_verification tool call so the SDK hands back a
+    # parsed dict — no JSON scraping. RateLimitError retries are handled inside
+    # request_tool_call; a ValueError means the model returned no tool call.
     try:
-        data = json.loads(cleaned)
-    except json.JSONDecodeError:
-        logger.error("Failed to parse verification agent response: %s", text[:300])
+        result = request_tool_call(
+            client,
+            model="claude-sonnet-4-6",
+            # 8192 (up from 4096) so a plan with many remediation steps isn't
+            # truncated mid-tool-call; still well under the streaming threshold.
+            max_tokens=8192,
+            system=[
+                {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+            ],
+            messages=[{"role": "user", "content": user_message}],
+            tool=_VERIFICATION_TOOL,
+        )
+    except ValueError:
+        logger.error("Verification agent returned no structured tool call")
         return AgentVerificationResult(
             passed=False,
             confidence=0.0,
-            issues_found=({
-                "column": None,
-                "issue": "Verification agent returned unparseable response",
-                "severity": "HIGH",
-                "detail": text[:500],
-            },),
+            issues_found=(
+                {
+                    "column": None,
+                    "issue": "Verification agent returned no structured result",
+                    "severity": "HIGH",
+                    "detail": "The model did not call the submit_verification tool.",
+                },
+            ),
             recommendations=("Re-run verification or inspect cleaned data manually",),
-            summary="Verification agent response could not be parsed.",
+            summary="Verification agent did not return a structured result.",
         )
 
+    logger.debug("Verification agent tool input keys: %s", sorted(result.input))
+    return _result_from_tool_input(result.input)
+
+
+def _as_tuple(value: Any) -> tuple[Any, ...]:
+    """Coerce a tool-input list field to a tuple; anything non-list becomes empty.
+
+    Forced tool use guarantees a call but not that each field matches its declared
+    type — a stray string would otherwise be split into a per-character tuple that
+    breaks downstream ``.get("severity")`` access in the remediation loop.
+    """
+    return tuple(value) if isinstance(value, list) else ()
+
+
+def _result_from_tool_input(data: dict[str, Any]) -> AgentVerificationResult:
+    """Build an AgentVerificationResult from the verification tool's parsed input.
+
+    Fields are defensively coerced because the model's forced tool call is not
+    strictly type-checked (Sonnet 4.6 has no strict tool use): a non-numeric or
+    out-of-range ``confidence`` must not raise or produce a >100% value, and the
+    list fields must not accept a stray scalar.
+    """
     return AgentVerificationResult(
         passed=bool(data.get("passed", False)),
-        confidence=float(data.get("confidence", 0.0)),
-        issues_found=tuple(data.get("issues_found", [])),
-        recommendations=tuple(data.get("recommendations", [])),
-        remediation_steps=tuple(data.get("remediation_steps", [])),
-        summary=data.get("summary", ""),
+        confidence=coerce_confidence(data.get("confidence")) or 0.0,
+        issues_found=_as_tuple(data.get("issues_found")),
+        recommendations=_as_tuple(data.get("recommendations")),
+        remediation_steps=_as_tuple(data.get("remediation_steps")),
+        summary=str(data.get("summary") or ""),
     )

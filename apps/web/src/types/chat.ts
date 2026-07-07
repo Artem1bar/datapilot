@@ -52,7 +52,8 @@ export interface InspectionSummaryPayload {
 export interface CleaningPlanPayload {
   readonly type: "cleaning_plan";
   readonly summary: string;
-  readonly steps: ReadonlyArray<CleaningStep & { readonly confidence?: number }>;
+  readonly datasetId: string;
+  readonly steps: ReadonlyArray<CleaningStep & { readonly confidence?: number; readonly rationale?: string }>;
 }
 
 export interface CleaningProgressPayload {
@@ -80,6 +81,7 @@ export interface CleaningResultsPayload {
   readonly issuesResolved: number;
   readonly datasetId: string;
   readonly remediationApplied?: boolean;
+  readonly unresolvableFlags?: readonly string[];
 }
 
 export interface DataOverviewPayload {

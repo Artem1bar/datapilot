@@ -161,6 +161,24 @@ def _make_cleaned_key(r2_key: str) -> str:
     return f"{base}_cleaned{ext}"
 
 
+def _remediation_stalled(
+    current_remaining: set[str],
+    prev_remaining: set[str] | None,
+    applied_remediation: bool,
+) -> bool:
+    """True when the last remediation round failed to shrink the remaining flags.
+
+    Once a round has applied remediation but the quality flags still present
+    afterward are not a strict subset of those present before, another round
+    won't help — the survivors are effectively unresolvable. Stopping here avoids
+    burning another verification-agent call (and its tokens) on a flag the model
+    already tried and failed to fix.
+    """
+    if not applied_remediation or prev_remaining is None:
+        return False
+    return not (current_remaining < prev_remaining)
+
+
 @celery_app.task(bind=True, name="clean_dataset", max_retries=2)
 def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
     """Download a dataset, apply cleaning steps, and upload the cleaned result."""
@@ -237,6 +255,8 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         max_remediation_rounds = 2
         all_remediation_steps: list[dict] = []
         agent_assessment = None
+        prev_remaining_flags: set[str] | None = None
+        unresolvable_flags: list[str] = []
 
         for round_num in range(max_remediation_rounds):
             round_label = f"Round {round_num + 1}/{max_remediation_rounds}"
@@ -274,6 +294,23 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
             ):
                 logger.info("Verification passed on %s — no remediation needed", round_label)
                 break
+
+            # Convergence guard: if the previous round applied remediation but the
+            # remaining flags didn't shrink, another round won't help. Record the
+            # survivors as unresolvable and stop instead of re-running the agent.
+            current_remaining = set(verification_report.flags_remaining)
+            if _remediation_stalled(
+                current_remaining, prev_remaining_flags, bool(all_remediation_steps)
+            ):
+                unresolvable_flags = sorted(current_remaining)
+                logger.info(
+                    "Remediation stalled on %s — %d flag(s) unresolvable: %s",
+                    round_label,
+                    len(unresolvable_flags),
+                    unresolvable_flags[:5],
+                )
+                break
+            prev_remaining_flags = current_remaining
 
             # Run Claude verification agent
             _publish_progress_sync(
@@ -393,31 +430,43 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                 agent_assessment = {"error": f"Verification agent unavailable ({round_label})"}
                 break
         else:
-            # Loop exhausted without passing — run final verification
+            # Loop ran every round without breaking. Only here can the final
+            # round's remediation be unverified (a break never happens right
+            # after applying remediation), so re-verify to capture it. Every
+            # break path leaves `verification_report` already reflecting all
+            # applied remediation — no redundant pass needed there.
             logger.warning(
                 "Remediation loop exhausted after %d rounds without passing",
                 max_remediation_rounds,
             )
+            if all_remediation_steps:
+                _publish_progress_sync(
+                    job_id, "running", 80, "Final verification after remediation"
+                )
+                verification_report = verify_cleaning_result(
+                    original_df=original_df,
+                    cleaned_df=df,
+                    steps=steps + all_remediation_steps,
+                    audit_log=audit_log,
+                    original_quality_flags=original_quality_flags,
+                    failed_steps=failed_steps,
+                )
+                verification_data = verification_report.to_dict()
+                verification_data.pop("flags_before", None)
+                verification_data.pop("flags_after", None)
 
-        # Final verification snapshot after all remediation
-        if all_remediation_steps:
-            _publish_progress_sync(job_id, "running", 80, "Final verification after remediation")
-            final_report = verify_cleaning_result(
-                original_df=original_df,
-                cleaned_df=df,
-                steps=steps + all_remediation_steps,
-                audit_log=audit_log,
-                original_quality_flags=original_quality_flags,
-                failed_steps=failed_steps,
-            )
-            verification_data = final_report.to_dict()
-            verification_data.pop("flags_before", None)
-            verification_data.pop("flags_after", None)
+        # `verification_report` / `verification_data` now reflect the
+        # post-remediation state on every exit path.
+        if agent_assessment and all_remediation_steps:
+            agent_assessment["post_remediation_passed"] = verification_report.overall_passed
+            agent_assessment["total_remediation_rounds"] = len(all_remediation_steps)
 
-            if agent_assessment:
-                agent_assessment["post_remediation_passed"] = final_report.overall_passed
-                agent_assessment["total_remediation_rounds"] = len(all_remediation_steps)
+        # Flags still present after every remediation attempt are unresolvable. The
+        # stall guard may have set these already; otherwise derive from the report.
+        if not unresolvable_flags:
+            unresolvable_flags = sorted(verification_report.flags_remaining)
 
+        verification_data["unresolvable_flags"] = unresolvable_flags
         verification_data["agent_assessment"] = agent_assessment
 
         # Update cleaned_rows AFTER all remediation

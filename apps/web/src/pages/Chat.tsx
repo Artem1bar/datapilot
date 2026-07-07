@@ -343,7 +343,10 @@ export default function Chat() {
         .json<JobResponse>();
 
       // The plan endpoint returns a JobResponse — steps live inside result_json
-      const planData = planJob.result_json as { steps: CleaningStep[]; summary: string } | null;
+      const planData = planJob.result_json as {
+        steps: Array<CleaningStep & { confidence?: number; rationale?: string }>;
+        summary: string;
+      } | null;
       if (!planData?.steps?.length) {
         throw new Error("No cleaning steps were generated. Try again or check your dataset.");
       }
@@ -351,11 +354,38 @@ export default function Chat() {
       const planCard: CleaningPlanPayload = {
         type: "cleaning_plan",
         summary: planData.summary ?? `AI-generated cleaning plan with ${planData.steps.length} steps`,
-        steps: planData.steps.map((s) => ({ ...s, confidence: 0.9 })),
+        datasetId,
+        steps: planData.steps,
       };
 
       addMessage(sessionId, createMessage("assistant", "", planCard));
       setWorkflowStep("plan", "complete");
+      // The workflow pauses here for user approval. The plan card lets the user
+      // toggle steps and press "Apply", which dispatches the "apply_cleaning"
+      // card action → applyCleaningSteps(). Nothing is applied automatically.
+    } catch (err) {
+      addMessage(
+        sessionId,
+        createMessage("system", `Cleaning error: ${err instanceof Error ? err.message : "Unknown error"}`),
+      );
+      clearWorkflow();
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // Applies user-approved cleaning steps: runs the clean job, streams progress,
+  // then shows the validation + results cards. Triggered by the plan card's
+  // Apply button (the "apply_cleaning" card action) — never automatically.
+  async function applyCleaningSteps(
+    sessionId: string,
+    datasetId: string,
+    steps: CleaningStep[],
+  ) {
+    setSending(true);
+
+    try {
+      const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
 
       // ── Step 3: Clean ────────────────────────────────────────
       setWorkflowStep("clean", "active");
@@ -377,7 +407,7 @@ export default function Chat() {
 
       const applyJob = await api
         .post(`cleaning/${datasetId}/apply`, {
-          json: { steps: planData.steps },
+          json: { steps },
           timeout: 180_000,
         })
         .json<JobResponse>();
@@ -438,9 +468,9 @@ export default function Chat() {
       const rowsAfter = (result?.cleaned_rows as number) ?? rowsBefore;
       const issuesResolved = (result?.cells_modified as number) ?? 0;
       const remediationApplied = !!(
-        (result?.verification as Record<string, unknown> | undefined)
-          ?.agent_assessment as Record<string, unknown> | undefined
+        verification?.agent_assessment as Record<string, unknown> | undefined
       )?.remediation_applied;
+      const unresolvableFlags = (verification?.unresolvable_flags as string[] | undefined) ?? [];
 
       const resultsCard: CleaningResultsPayload = {
         type: "cleaning_results",
@@ -450,6 +480,7 @@ export default function Chat() {
         issuesResolved,
         datasetId,
         remediationApplied,
+        unresolvableFlags,
       };
       addMessage(sessionId, createMessage("assistant", "", resultsCard));
 
@@ -484,6 +515,14 @@ export default function Chat() {
         if (sessionId) {
           setInput("Analyze my data");
         }
+      }
+
+      if (action === "apply_cleaning" && data) {
+        const sessionId = activeSessionId;
+        if (!sessionId) return;
+        const { datasetId, steps } = data as { datasetId?: string; steps?: CleaningStep[] };
+        if (!datasetId || !steps?.length) return;
+        await applyCleaningSteps(sessionId, datasetId, steps);
       }
 
       if (action === "apply_manipulation" && data) {
@@ -576,6 +615,7 @@ export default function Chat() {
         }
       }
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- applyCleaningSteps is a stable inner fn (closes only over stable store actions/module fns), same pattern as runCleaningWorkflow above
     [activeSessionId, addMessage, setSending],
   );
 

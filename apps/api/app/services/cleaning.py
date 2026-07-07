@@ -16,6 +16,7 @@ import pandas as pd
 from anthropic import Anthropic
 
 from app.config import settings
+from app.services.structured_output import coerce_confidence, request_tool_call
 
 logger = logging.getLogger(__name__)
 
@@ -110,54 +111,66 @@ def _sample_rows_to_markdown(sample_rows: list[dict[str, Any]]) -> str:
     return "\n".join([header, separator, *rows])
 
 
-def _extract_json_from_response(text: str) -> Any:
-    """Extract JSON from a response that may contain markdown code fences."""
-    text = text.strip()
-
-    # Strip markdown code fences directly
-    if text.startswith("```"):
-        first_newline = text.find("\n")
-        if first_newline != -1:
-            inner = text[first_newline + 1 :]
-            last_fence = inner.rfind("```")
-            if last_fence != -1:
-                inner = inner[:last_fence]
-            text = inner.strip()
-
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
-
-    match = re.search(r"```(?:json)?\s*\n?(.*?)```", text, re.DOTALL)
-    if match:
-        try:
-            return json.loads(match.group(1).strip())
-        except json.JSONDecodeError:
-            pass
-
-    for start_char, end_char in [("{", "}"), ("[", "]")]:
-        start = text.find(start_char)
-        if start == -1:
-            continue
-        depth = 0
-        for i in range(start, len(text)):
-            if text[i] == start_char:
-                depth += 1
-            elif text[i] == end_char:
-                depth -= 1
-            if depth == 0:
-                try:
-                    return json.loads(text[start : i + 1])
-                except json.JSONDecodeError:
-                    break
-
-    raise ValueError(f"Could not extract valid JSON from Claude response: {text[:200]}")
-
-
 # ---------------------------------------------------------------------------
 # Plan generation
 # ---------------------------------------------------------------------------
+
+# Tool schema Claude must call to return the cleaning plan. Forcing this tool
+# call (see structured_output.request_tool_call) yields an already-parsed dict
+# instead of JSON scraped from free text, and lets `params` stay a freeform
+# object that a strict structured-output schema could not express.
+_CLEANING_PLAN_TOOL: dict[str, Any] = {
+    "name": "submit_cleaning_plan",
+    "description": "Submit the ordered cleaning plan for the dataset.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "steps": {
+                "type": "array",
+                "description": "Ordered cleaning steps to apply.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "operation": {
+                            "type": "string",
+                            "description": "One of the supported operation names.",
+                        },
+                        "column": {
+                            "type": ["string", "null"],
+                            "description": "Target column, or null for whole-dataset operations.",
+                        },
+                        "params": {
+                            "type": "object",
+                            "description": "Operation-specific parameters.",
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Human-readable 'Step N: ...' description.",
+                        },
+                        "rationale": {
+                            "type": "string",
+                            "description": "Why this step is needed for THIS dataset.",
+                        },
+                        "confidence": {
+                            "type": "number",
+                            "description": "Confidence (0.0-1.0) this step is correct and necessary.",
+                        },
+                    },
+                    "required": ["operation", "description"],
+                },
+            },
+            "summary": {
+                "type": "string",
+                "description": "One-paragraph summary of the plan.",
+            },
+            "confidence": {
+                "type": "number",
+                "description": "Overall confidence (0.0-1.0) in the plan.",
+            },
+        },
+        "required": ["steps", "summary"],
+    },
+}
 
 
 def _build_issues_summary(profile_json: dict[str, Any]) -> str:
@@ -330,14 +343,7 @@ def generate_cleaning_plan(
         f"Here are {n_samples} sample rows showing {col_note} "
         "(including the header row that needs dropping if flagged):\n\n"
         f"{sample_table}\n\n"
-        "Return ONLY a valid JSON object matching the CleaningPlan schema:\n"
-        "{\n"
-        '  "steps": [\n'
-        '    {"operation": "...", "column": "...", "params": {...}, "description": "..."}\n'
-        "  ],\n"
-        '  "summary": "...",\n'
-        '  "estimated_row_impact": null\n'
-        "}\n\n"
+        "Call the submit_cleaning_plan tool with the ordered list of steps.\n\n"
         "Supported operations:\n"
         "  STRUCTURAL (run first):\n"
         "    clean_column_names — normalise column names (remove NBSP, trim spaces)\n"
@@ -363,7 +369,8 @@ def generate_cleaning_plan(
         "(e.g. 50000 for hotel, 10000 for meals, 5000 for transport). This catches data entry errors like $1B.\n"
         "- ALWAYS include `flag_extreme_outliers` for numeric expense columns AFTER cap_extreme_values.\n"
         "- Number each step sequentially starting from 1 in the description field (e.g. 'Step 1: ...', 'Step 2: ...').\n"
-        "Return ONLY valid JSON. No explanation outside the JSON."
+        "- For each step, give a short `rationale` and a `confidence` from 0.0 to 1.0.\n"
+        "Call submit_cleaning_plan with the plan — do not reply with anything else."
     )
 
     # Append user-supplied cleaning instructions if provided
@@ -388,36 +395,30 @@ def generate_cleaning_plan(
     )
 
     # Generate → validate → (on failure) regenerate once with the specific
-    # errors fed back, so hallucinated operations/columns and malformed JSON
-    # never reach the executor as silently failed steps.
+    # errors fed back, so hallucinated operations/columns never reach the
+    # executor as silently failed steps. A forced submit_cleaning_plan tool
+    # call means the SDK returns a parsed dict — no JSON scraping.
     max_attempts = 2
     conversation: list[dict[str, Any]] = [{"role": "user", "content": user_message}]
     last_error = ""
 
     for attempt in range(1, max_attempts + 1):
-        response = client.messages.create(
+        result = request_tool_call(
+            client,
             model="claude-opus-4-8",
             max_tokens=16384,
             system=[
                 {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
             ],
             messages=conversation,
+            tool=_CLEANING_PLAN_TOOL,
         )
-        response_text = response.content[0].text
-        logger.debug("Claude response: %s", response_text[:500])
+        plan = result.input
 
         try:
-            parsed = _extract_json_from_response(response_text)
-
-            if isinstance(parsed, list):
-                steps = parsed
-            elif isinstance(parsed, dict) and "steps" in parsed:
-                steps = parsed["steps"]
-            else:
-                raise ValueError(f"Unexpected cleaning plan structure: {type(parsed)}")
-
+            steps = plan.get("steps")
             if not isinstance(steps, list) or not all(isinstance(s, dict) for s in steps):
-                raise ValueError("Plan steps must be a JSON array of objects")
+                raise ValueError("Plan 'steps' must be an array of objects")
 
             # Guard: if quality flags exist but Claude returned no steps, something went wrong
             if not steps and data_quality:
@@ -427,16 +428,17 @@ def generate_cleaning_plan(
                     f"(flagged columns: {flagged_cols[:5]})"
                 )
 
-            validated_steps = []
-            for step in steps:
-                validated_steps.append(
-                    {
-                        "operation": step.get("operation", ""),
-                        "column": step.get("column"),
-                        "params": step.get("params", {}),
-                        "description": step.get("description", ""),
-                    }
-                )
+            validated_steps = [
+                {
+                    "operation": step.get("operation", ""),
+                    "column": step.get("column"),
+                    "params": step.get("params") or {},
+                    "description": step.get("description", ""),
+                    "rationale": step.get("rationale", ""),
+                    "confidence": coerce_confidence(step.get("confidence")),
+                }
+                for step in steps
+            ]
 
             issues = validate_plan(validated_steps, known_operations, columns)
             if not issues:
@@ -458,16 +460,22 @@ def generate_cleaning_plan(
                 max_attempts,
                 last_error[:300],
             )
-            conversation.append({"role": "assistant", "content": response_text})
+            conversation.append({"role": "assistant", "content": result.raw_content})
             conversation.append(
                 {
                     "role": "user",
-                    "content": (
-                        "Your cleaning plan was rejected by the plan validator:\n"
-                        f"{last_error}\n\n"
-                        "Return the complete corrected CleaningPlan as JSON (all steps, "
-                        "not just the fixed ones). Return ONLY valid JSON."
-                    ),
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "tool_use_id": result.tool_use_id,
+                            "content": (
+                                "Your cleaning plan was rejected by the plan validator:\n"
+                                f"{last_error}\n\n"
+                                "Call submit_cleaning_plan again with the complete "
+                                "corrected plan (all steps, not just the fixed ones)."
+                            ),
+                        }
+                    ],
                 }
             )
 
@@ -1300,7 +1308,7 @@ def execute_cleaning_plan(
     for i, step in enumerate(steps):
         operation = step.get("operation", "")
         column = step.get("column")
-        params = step.get("params", {})
+        params = step.get("params") or {}  # tolerate an explicit "params": null
         description = step.get("description", "")
 
         executor = _OPERATION_MAP.get(operation)

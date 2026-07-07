@@ -1,4 +1,4 @@
-import { Download, BarChart3, Sparkles, RefreshCw } from "lucide-react";
+import { Download, BarChart3, Sparkles, RefreshCw, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { CleaningResultsPayload } from "@/types";
 
@@ -8,9 +8,11 @@ interface Props {
 }
 
 export function CleaningResultsCard({ payload, onAction }: Props) {
-  const { downloadUrl, rowsBefore, rowsAfter, issuesResolved, remediationApplied } = payload;
+  const { downloadUrl, rowsBefore, rowsAfter, issuesResolved, remediationApplied, unresolvableFlags } =
+    payload;
 
   const rowsRemoved = rowsBefore - rowsAfter;
+  const unresolved = unresolvableFlags ?? [];
 
   return (
     <div className="my-2 max-w-[85%]">
@@ -54,6 +56,16 @@ export function CleaningResultsCard({ payload, onAction }: Props) {
           <div className="border-t border-teal-200 px-4 py-2">
             <p className="text-[12px] text-ink-muted">
               {rowsRemoved} row{rowsRemoved !== 1 ? "s" : ""} removed during cleaning
+            </p>
+          </div>
+        )}
+
+        {unresolved.length > 0 && (
+          <div className="flex items-start gap-2 border-t border-amber-200 bg-amber-50/50 px-4 py-2">
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
+            <p className="text-[12px] text-amber-700">
+              {unresolved.length} issue{unresolved.length !== 1 ? "s" : ""} couldn&apos;t be auto-fixed:{" "}
+              <span className="font-mono">{unresolved.join(", ")}</span>
             </p>
           </div>
         )}
