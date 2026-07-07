@@ -32,7 +32,9 @@ interface WorkflowStepperProps {
 }
 
 export function WorkflowStepper({ steps: propSteps, filename: propFilename }: WorkflowStepperProps = {}) {
-  const workflowState = useSessionStore((s) => s.workflowState);
+  const workflowState = useSessionStore((s) =>
+    s.activeSessionId ? s.workflowStateBySession[s.activeSessionId] : undefined,
+  );
 
   const steps = propSteps ?? workflowState?.steps;
   const filename = propFilename ?? workflowState?.datasetFilename;

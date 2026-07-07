@@ -35,7 +35,9 @@ export default function Chat() {
     (s) => (activeSessionId ? s.messagesBySession[activeSessionId] : undefined),
   );
   const messages = rawMessages ?? EMPTY_MESSAGES;
-  const workflowState = useSessionStore((s) => s.workflowState);
+  const workflowState = useSessionStore((s) =>
+    s.activeSessionId ? s.workflowStateBySession[s.activeSessionId] : undefined,
+  );
   const addMessage = useSessionStore((s) => s.addMessage);
   const createSession = useSessionStore((s) => s.createSession);
   const setSessionDatasetId = useSessionStore((s) => s.setSessionDatasetId);
@@ -306,10 +308,10 @@ export default function Chat() {
     try {
       // Fetch dataset info
       const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
-      startWorkflow(datasetId, dataset.filename);
+      startWorkflow(sessionId, datasetId, dataset.filename);
 
       // ── Step 1: Inspect ──────────────────────────────────────
-      setWorkflowStep("inspect", "active");
+      setWorkflowStep(sessionId, "inspect", "active");
       addMessage(sessionId, createMessage("system", "Inspecting your dataset..."));
 
       const profile = dataset.profile_json as Record<string, unknown> | null;
@@ -332,10 +334,10 @@ export default function Chat() {
       };
 
       addMessage(sessionId, createMessage("assistant", "", inspectionCard));
-      setWorkflowStep("inspect", "complete");
+      setWorkflowStep(sessionId, "inspect", "complete");
 
       // ── Step 2: Plan ─────────────────────────────────────────
-      setWorkflowStep("plan", "active");
+      setWorkflowStep(sessionId, "plan", "active");
       addMessage(sessionId, createMessage("system", "Generating cleaning plan..."));
 
       const planJob = await api
@@ -359,7 +361,7 @@ export default function Chat() {
       };
 
       addMessage(sessionId, createMessage("assistant", "", planCard));
-      setWorkflowStep("plan", "complete");
+      setWorkflowStep(sessionId, "plan", "complete");
       // The workflow pauses here for user approval. The plan card lets the user
       // toggle steps and press "Apply", which dispatches the "apply_cleaning"
       // card action → applyCleaningSteps(). Nothing is applied automatically.
@@ -368,7 +370,7 @@ export default function Chat() {
         sessionId,
         createMessage("system", `Cleaning error: ${err instanceof Error ? err.message : "Unknown error"}`),
       );
-      clearWorkflow();
+      clearWorkflow(sessionId);
     } finally {
       setSending(false);
     }
@@ -388,7 +390,7 @@ export default function Chat() {
       const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
 
       // ── Step 3: Clean ────────────────────────────────────────
-      setWorkflowStep("clean", "active");
+      setWorkflowStep(sessionId, "clean", "active");
 
       const progressMsgId = generateId();
       const progressCard: CleaningProgressPayload = {
@@ -437,10 +439,10 @@ export default function Chat() {
         },
       });
 
-      setWorkflowStep("clean", "complete");
+      setWorkflowStep(sessionId, "clean", "complete");
 
       // ── Step 4: Validate ─────────────────────────────────────
-      setWorkflowStep("validate", "active");
+      setWorkflowStep(sessionId, "validate", "active");
       addMessage(sessionId, createMessage("system", "Validating results..."));
 
       const result = jobResult.result_json as Record<string, unknown> | null;
@@ -460,7 +462,7 @@ export default function Chat() {
         addMessage(sessionId, createMessage("assistant", "", validationCard));
       }
 
-      setWorkflowStep("validate", "complete");
+      setWorkflowStep(sessionId, "validate", "complete");
 
       // ── Final results card ───────────────────────────────────
       const rowsBefore = dataset.row_count ?? 0;
@@ -484,13 +486,13 @@ export default function Chat() {
       };
       addMessage(sessionId, createMessage("assistant", "", resultsCard));
 
-      clearWorkflow();
+      clearWorkflow(sessionId);
     } catch (err) {
       addMessage(
         sessionId,
         createMessage("system", `Cleaning error: ${err instanceof Error ? err.message : "Unknown error"}`),
       );
-      clearWorkflow();
+      clearWorkflow(sessionId);
     } finally {
       setSending(false);
     }

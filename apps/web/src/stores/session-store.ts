@@ -25,7 +25,9 @@ interface SessionState {
   sessions: readonly Session[];
   activeSessionId: string | null;
   messagesBySession: Readonly<Record<string, readonly ChatMessageV2[]>>;
-  workflowState: WorkflowState | null;
+  // Keyed by session id: each session runs its own cleaning workflow, so a
+  // second run in another session no longer clobbers the first.
+  workflowStateBySession: Readonly<Record<string, WorkflowState>>;
 
   // Session actions
   createSession: (title?: string) => string;
@@ -39,10 +41,14 @@ interface SessionState {
   addMessage: (sessionId: string, message: ChatMessageV2) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessageV2>) => void;
 
-  // Workflow actions
-  startWorkflow: (datasetId: string, filename: string) => void;
-  setWorkflowStep: (stepId: WorkflowStepId, status: "active" | "complete" | "error") => void;
-  clearWorkflow: () => void;
+  // Workflow actions (scoped to a session)
+  startWorkflow: (sessionId: string, datasetId: string, filename: string) => void;
+  setWorkflowStep: (
+    sessionId: string,
+    stepId: WorkflowStepId,
+    status: "active" | "complete" | "error",
+  ) => void;
+  clearWorkflow: (sessionId: string) => void;
 }
 
 export const useSessionStore = create<SessionState>()(
@@ -51,7 +57,7 @@ export const useSessionStore = create<SessionState>()(
       sessions: [],
       activeSessionId: null,
       messagesBySession: {},
-      workflowState: null,
+      workflowStateBySession: {},
 
       /* ── Session CRUD ─────────────────────────────────────────── */
 
@@ -78,10 +84,12 @@ export const useSessionStore = create<SessionState>()(
       deleteSession: (id) =>
         set((state) => {
           const { [id]: _removed, ...rest } = state.messagesBySession;
+          const { [id]: _wf, ...restWf } = state.workflowStateBySession;
           return {
             sessions: state.sessions.filter((s) => s.id !== id),
             activeSessionId: state.activeSessionId === id ? null : state.activeSessionId,
             messagesBySession: rest,
+            workflowStateBySession: restWf,
           };
         }),
 
@@ -139,40 +147,50 @@ export const useSessionStore = create<SessionState>()(
 
       /* ── Workflow ──────────────────────────────────────────────── */
 
-      startWorkflow: (datasetId, filename) =>
-        set({
-          workflowState: {
-            datasetId,
-            datasetFilename: filename,
-            steps: DEFAULT_WORKFLOW_STEPS.map((s) => ({ ...s })),
+      startWorkflow: (sessionId, datasetId, filename) =>
+        set((state) => ({
+          workflowStateBySession: {
+            ...state.workflowStateBySession,
+            [sessionId]: {
+              datasetId,
+              datasetFilename: filename,
+              steps: DEFAULT_WORKFLOW_STEPS.map((s) => ({ ...s })),
+            },
           },
-        }),
+        })),
 
-      setWorkflowStep: (stepId, status) => {
-        const current = get().workflowState;
+      setWorkflowStep: (sessionId, stepId, status) => {
+        const current = get().workflowStateBySession[sessionId];
         if (!current) return;
 
-        set({
-          workflowState: {
-            ...current,
-            steps: current.steps.map((s) => {
-              if (s.id === stepId) return { ...s, status };
-              // Mark all prior steps as complete if advancing
-              if (status === "active") {
-                const stepOrder: WorkflowStepId[] = ["inspect", "plan", "clean", "validate"];
-                const targetIdx = stepOrder.indexOf(stepId);
-                const thisIdx = stepOrder.indexOf(s.id);
-                if (thisIdx < targetIdx && s.status !== "error") {
-                  return { ...s, status: "complete" };
+        set((state) => ({
+          workflowStateBySession: {
+            ...state.workflowStateBySession,
+            [sessionId]: {
+              ...current,
+              steps: current.steps.map((s) => {
+                if (s.id === stepId) return { ...s, status };
+                // Mark all prior steps as complete if advancing
+                if (status === "active") {
+                  const stepOrder: WorkflowStepId[] = ["inspect", "plan", "clean", "validate"];
+                  const targetIdx = stepOrder.indexOf(stepId);
+                  const thisIdx = stepOrder.indexOf(s.id);
+                  if (thisIdx < targetIdx && s.status !== "error") {
+                    return { ...s, status: "complete" };
+                  }
                 }
-              }
-              return s;
-            }),
+                return s;
+              }),
+            },
           },
-        });
+        }));
       },
 
-      clearWorkflow: () => set({ workflowState: null }),
+      clearWorkflow: (sessionId) =>
+        set((state) => {
+          const { [sessionId]: _removed, ...rest } = state.workflowStateBySession;
+          return { workflowStateBySession: rest };
+        }),
     }),
     {
       name: "datatiger-sessions",
