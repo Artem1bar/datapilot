@@ -70,6 +70,7 @@ def create_app() -> FastAPI:
     from app.routers.jobs import router as jobs_router
     from app.routers.manipulation import router as manipulation_router
     from app.routers.recipes import router as recipes_router
+    from app.routers.settings import router as settings_router
 
     # Health check at root level
     app.include_router(health_router)
@@ -84,6 +85,7 @@ def create_app() -> FastAPI:
     app.include_router(manipulation_router, prefix="/api/v1/manipulation")
     app.include_router(exports_router, prefix="/api/v1/exports")
     app.include_router(dictionary_router, prefix="/api/v1/datasets")
+    app.include_router(settings_router, prefix="/api/v1/settings")
 
     return app
 
