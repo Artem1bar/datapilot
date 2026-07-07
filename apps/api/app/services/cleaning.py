@@ -1283,6 +1283,33 @@ def supported_operations() -> set[str]:
     return set(_OPERATION_MAP)
 
 
+# Operations the verification agent may emit as remediation steps — a deliberate
+# subset of _OPERATION_MAP. Remediation should re-clean and cap, not restructure
+# (rename_column, remove_outliers) or apply speculative transforms
+# (standardize_values, flag_contextual_fraud, convert_time_to_number).
+REMEDIATION_OPS: frozenset[str] = frozenset(
+    {
+        "clean_column_names",
+        "drop_empty_columns",
+        "drop_incomplete_responses",
+        "drop_rows",
+        "strip_whitespace",
+        "remove_currency_symbols",
+        "extract_number",
+        "convert_number_words",
+        "free_to_zero",
+        "remove_vague_entries",
+        "fill_null",
+        "drop_null",
+        "cast_type",
+        "sum_composite_expenses",
+        "flag_extreme_outliers",
+        "cap_extreme_values",
+        "deduplicate",
+    }
+)
+
+
 # ---------------------------------------------------------------------------
 # Plan execution
 # ---------------------------------------------------------------------------

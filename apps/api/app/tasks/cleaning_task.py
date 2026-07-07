@@ -352,12 +352,14 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                     agent_assessment["remediation_applied"] = bool(all_remediation_steps)
                     break
 
-                # Validate agent-proposed steps before executing anything
-                from app.services.cleaning import _OPERATION_MAP
+                # Validate agent-proposed steps before executing anything.
+                # Enforce the remediation subset (not the full op map) so the
+                # agent can re-clean and cap but not restructure the dataset.
+                from app.services.cleaning import REMEDIATION_OPS
                 from app.services.plan_validator import validate_plan
 
                 remediation_steps = list(agent_result.remediation_steps)
-                issues = validate_plan(remediation_steps, set(_OPERATION_MAP), list(df.columns))
+                issues = validate_plan(remediation_steps, set(REMEDIATION_OPS), list(df.columns))
                 if issues:
                     invalid_indices = {issue.step_index for issue in issues}
                     logger.warning(

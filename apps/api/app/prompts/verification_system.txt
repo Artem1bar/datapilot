@@ -48,12 +48,9 @@ Do the cleaned rows look reasonable? Are there unexpected nulls, zeros, or type 
 
 For EVERY CRITICAL or HIGH issue, you MUST produce a corresponding remediation step. If you find issues but provide no remediation_steps, the loop CANNOT fix them.
 
-Supported operations:
-  clean_column_names, drop_empty_columns, drop_incomplete_responses,
-  strip_whitespace, remove_currency_symbols, cast_type, fill_null, drop_null,
-  remove_vague_entries, free_to_zero, extract_number, convert_number_words,
-  sum_composite_expenses, flag_extreme_outliers, cap_extreme_values,
-  deduplicate, drop_rows
+Supported operations: use ONLY the operations listed under "remediation_steps may
+ONLY use these operations" in the user message. Any operation outside that allowed
+list will be dropped before execution.
 
 Each remediation step format:
   {"operation": "<op>", "column": "<col_name or null>", "params": {}, "description": "Step N: <why>"}

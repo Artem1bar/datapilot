@@ -140,7 +140,10 @@ def run_verification_agent(
     Returns:
         AgentVerificationResult with pass/fail, confidence, issues, and recommendations.
     """
+    from app.services.cleaning import REMEDIATION_OPS
+
     system_prompt = _SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+    allowed_ops = ", ".join(sorted(REMEDIATION_OPS))
 
     # Number the steps for traceability
     numbered_steps = []
@@ -211,9 +214,11 @@ def run_verification_agent(
         "## DETERMINISTIC VERIFICATION SUMMARY\n"
         f"```json\n{json.dumps(slim_report, indent=2, default=str)}\n```\n\n"
         "Check every value in the flagged columns for:\n"
-        "1. Absurdly large values (>$50K hotels, >$100K gambling)\n"
+        "1. Values orders of magnitude above the column's own distribution (its p99/max)\n"
         "2. String values that should be numeric\n"
-        "3. Unresolved quality flags\n"
+        "3. Unresolved quality flags\n\n"
+        f"remediation_steps may ONLY use these operations: {allowed_ops}. "
+        "A step with any other operation will be dropped.\n"
         "Call the submit_verification tool with your assessment, including "
         "remediation_steps for EVERY CRITICAL/HIGH issue."
     )
