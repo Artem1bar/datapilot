@@ -18,7 +18,7 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 - **Data visualizations** — ask questions in chat and Claude returns charts (bar, line, pie, scatter) rendered live in a slide-out panel
 - **Cleaned dataset library** — all processed datasets are stored and can be re-downloaded at any time
 - **Export** — download cleaned files as CSV, Excel, or Parquet
-- **Real-time progress** — WebSocket-streamed job updates so you see cleaning progress live
+- **Live progress** — polled job updates so you see cleaning progress as it happens
 
 ## Architecture
 
@@ -44,7 +44,7 @@ supabase/               # Auth and DB migrations
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, Vite, TypeScript, Tailwind CSS, Framer Motion |
+| Frontend | React 19, Vite, TypeScript, Tailwind CSS, Framer Motion |
 | Backend | Python, FastAPI, SQLAlchemy (async), Alembic |
 | AI | Anthropic Claude — Opus 4.8 (cleaning plan), Sonnet 4.6 (manipulation, verification), Haiku 4.5 (analysis, dictionary) |
 | Auth | Supabase Auth / Clerk |
@@ -130,7 +130,6 @@ uv run pytest
 | `test_storage.py` | File storage (upload, download, delete) |
 | `test_comparison.py` | Dataset version comparison |
 | `test_jobs.py` | Job status polling |
-| `test_ws.py` | WebSocket real-time job progress stream |
 | `test_auth.py` | Clerk webhook authentication |
 | `test_multi_sheet.py` | Excel multi-sheet handling |
 | `test_file_validation.py` | Upload format and size validation |
@@ -179,7 +178,6 @@ pnpm test
 | `GET /exports/{job_id}/download` | Download the exported file |
 | `GET /datasets/{id}/dictionary` | Auto-generate AI data dictionary |
 | `GET /jobs/{id}` | Poll job status and results |
-| `WS /ws/jobs/{job_id}` | Real-time job progress stream |
 | `GET /recipes/` | List saved cleaning recipes |
 | `POST /recipes/` | Save a new cleaning recipe |
 | `GET /recipes/{id}` | Get a specific recipe |
