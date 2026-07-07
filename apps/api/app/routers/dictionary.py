@@ -28,6 +28,12 @@ async def get_data_dictionary(
     db: DBSession,
 ) -> dict:
     """Generate an AI-powered data dictionary for a dataset."""
+    from app.services.rate_limit import check_rate_limit
+
+    await check_rate_limit(
+        str(user.id), action="data_dictionary", max_calls=20, window_seconds=3600
+    )
+
     result = await db.execute(
         select(Dataset).where(Dataset.id == dataset_id, Dataset.user_id == user.id)
     )
