@@ -107,9 +107,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**422 tests total** (379 backend + 43 frontend).
+**452 tests total** (403 backend + 49 frontend).
 
-### Backend (379 tests) — run from `apps/api/`
+### Backend (403 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -142,8 +142,9 @@ uv run pytest
 | `test_plan_generation.py` | Plan generate → validate → regenerate-on-invalid loop |
 | `test_datasets_router.py` | Dataset download/delete endpoints, JSON-safe previews |
 | `test_progress_reporting.py` / `test_task_db.py` | Per-stage job progress persistence, shared worker DB engine |
+| `test_structured_output.py` | Forced-tool-use helper: rate-limit retries, confidence coercion, error paths |
 
-### Frontend (43 tests) — run from `apps/web/`
+### Frontend (49 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
@@ -155,6 +156,7 @@ pnpm test
 | `src/lib/utils.test.ts` | `cn()` Tailwind class-merge utility |
 | `src/stores/app-store.test.ts` | Sidebar, chart panel, chart list, and theme state |
 | `src/stores/session-store.test.ts` | Session CRUD, messages, workflow step transitions |
+| `src/components/cards/CleaningPlanCard.test.tsx` | Plan card rendering, step display, accept/reject actions |
 
 ## API Overview
 
