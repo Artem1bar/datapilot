@@ -1,8 +1,16 @@
+import { lazy, Suspense } from "react";
 import { X, BarChart3, TrendingUp, Trash2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAppStore } from "@/stores/app-store";
-import { ChartRenderer } from "@/components/shared/ChartRenderer";
 import { Button } from "@/components/ui/button";
+
+// recharts is heavy (~800 kB unminified); load ChartRenderer only when a chart
+// actually renders so recharts stays out of the initial bundle.
+const ChartRenderer = lazy(() =>
+  import("@/components/shared/ChartRenderer").then((m) => ({
+    default: m.ChartRenderer,
+  })),
+);
 
 export function ChartPanel() {
   const chartPanelOpen = useAppStore((s) => s.chartPanelOpen);
@@ -70,16 +78,24 @@ export function ChartPanel() {
               </p>
             </div>
           ) : (
-            <div className="space-y-5">
-              {charts.map((chart, i) => (
-                <div
-                  key={i}
-                  className="rounded-xl border border-[var(--line)] bg-[var(--surface-canvas)] p-4 shadow-sm"
-                >
-                  <ChartRenderer config={chart} data={chart.data} />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center py-10 text-[13px] text-ink-muted">
+                  Loading charts…
                 </div>
-              ))}
-            </div>
+              }
+            >
+              <div className="space-y-5">
+                {charts.map((chart, i) => (
+                  <div
+                    key={i}
+                    className="rounded-xl border border-[var(--line)] bg-[var(--surface-canvas)] p-4 shadow-sm"
+                  >
+                    <ChartRenderer config={chart} data={chart.data} />
+                  </div>
+                ))}
+              </div>
+            </Suspense>
           )}
         </div>
       </div>
