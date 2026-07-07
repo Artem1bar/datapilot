@@ -31,6 +31,15 @@ All items below are committed with tests on branch `phase-2-product-quality` (**
 - ✅ Data lifecycle: daily Celery-beat orphaned-upload purge (scoped to `uploads/`, 24h age-guarded).
 - ⬜ Sentry (needs DSN + dep — deferred); managed-Postgres backups (host concern); docker-compose literal passwords → env interpolation (**deferred: would disrupt the existing local DB volume — needs your .env coordination**).
 
+**Phase 5 — Quality infrastructure (started 2026-07-07 afternoon):**
+- ✅ Perf: code-split recharts into a lazy chunk (loads only when a chart renders) + React/Clerk/markdown vendor chunks. Main bundle 1,325 kB → 405 kB; the >500 kB build warning is gone.
+- ✅ Shared pytest fixtures: `conftest.py` (was empty) now holds `make_user`/`make_db`/`mock_db`/`anthropic_tool_response`/`sample_df`; two files migrated as proof.
+- ✅ Coverage gates: pytest-cov (67%, 65% global floor + **PR-only diff-cover at 80% on changed lines**) and vitest v8 (`include`-driven all-files measurement, per-metric floors). Added an app-boot smoke test so `main.py` counts honestly. Both wired into CI; artifacts gitignored.
+- ✅ Frontend dark-area tests: extracted chat intent routing → `lib/intent.ts` and progress-stage labels → `lib/progress.ts`, both covered exhaustively (behavior in `Chat.tsx` unchanged). Frontend suite 57 → 88.
+- ✅ CI now runs the full `pnpm build:web` (was `tsc --noEmit`, which skips config files) — caught a `vitest 4` coverage-type break that would only have failed at Vercel deploy.
+- ⬜ Remaining: real-services **integration suite** + Playwright **E2E** (need the compose stack), coverage ratchet as the suite grows.
+- End state: **455 backend + 88 frontend green, ruff/eslint/tsc clean, `pnpm build` clean (no chunk warning)**. 5 commits, TDD throughout.
+
 **Phase 6 — Launch (started):**
 - ✅ AI cost controls: kill-switch (`AI_ENABLED`) + per-user daily budget shared across all AI endpoints.
 - ✅ Privacy/data-handling note in README; test counts corrected.
@@ -38,7 +47,7 @@ All items below are committed with tests on branch `phase-2-product-quality` (**
 
 **Decisions I took** (from the plan's "Decisions needed"): auth provider → **Clerk** (Supabase deleted); file-size ceiling → **50 MB** (`MAX_UPLOAD_BYTES`, configurable). Still yours: **backend host** (Railway/Fly — `deploy.yml` is host-agnostic scaffolding) and **launch scope** (private beta vs public sign-ups).
 
-**Needs a live environment to finish/verify:** Clerk sign-in flow, the settings UI + remaining 2B UX (`/qa` on the running app), E2E (Playwright against the compose stack), Phase 5 conftest/coverage, and the actual deploy (host + secrets). One thing to sanity-check: the verification/manipulation model id `claude-sonnet-4-6` was preserved verbatim into config — confirm it's real.
+**Needs a live environment to finish/verify:** Clerk sign-in flow, the settings UI + remaining 2B UX (`/qa` on the running app), the Phase 5 integration suite + E2E (Playwright/real-services against the compose stack), and the actual deploy (host + secrets). _(Phase 5 conftest + coverage gates are now done — see the afternoon entry above.)_ One thing to sanity-check: the verification/manipulation model id `claude-sonnet-4-6` was preserved verbatim into config — confirm it's real.
 
 ---
 

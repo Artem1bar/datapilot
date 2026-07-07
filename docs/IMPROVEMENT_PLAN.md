@@ -2,6 +2,8 @@
 
 _Audit date: 2026-07-06 (commit 76b0632). Goal: polish DataPilot into a reliable, high-quality data-cleaning tool. Verified baseline: 333 backend + 43 frontend tests green, ruff/eslint clean, `pnpm build` broken (tsc), real-time progress layer disconnected end-to-end._
 
+> **Status 2026-07-07:** Phases 0–1 below are complete and committed. Phases 2–3 are superseded by the full completion roadmap in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) (re-audited 2026-07-07); this file remains as the original audit trail.
+
 **Architecture verdict: keep the shape, tighten it.** FastAPI + Celery + Postgres + S3 with a fixed, auditable operation vocabulary and a verify-and-remediate loop is the right design for trustworthy cleaning. Do not move to free-form code generation as the primary path. Consolidate duplicates (two op registries, five `_read_dataframe` copies, decorative WebSocket layer, dual half-wired auth).
 
 ---
