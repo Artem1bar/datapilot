@@ -10,6 +10,7 @@ import { DataPreviewCard } from "./DataPreviewCard";
 import { DataDictionaryCard } from "./DataDictionaryCard";
 import { ComparisonCard } from "./ComparisonCard";
 import { HistoryCard } from "./HistoryCard";
+import { ErrorCard } from "./ErrorCard";
 
 interface CardRendererProps {
   payload: CardPayload;
@@ -54,6 +55,9 @@ export function CardRenderer({ payload, messageId, onAction }: CardRendererProps
 
     case "history":
       return <HistoryCard payload={payload} />;
+
+    case "error":
+      return <ErrorCard payload={payload} onAction={onAction} />;
 
     // Phase 3: visualization, report, data_overview cards
     default:

@@ -377,7 +377,12 @@ export default function Chat() {
     } catch (err) {
       addMessage(
         sessionId,
-        createMessage("system", `Cleaning error: ${err instanceof Error ? err.message : "Unknown error"}`),
+        createMessage("assistant", "", {
+          type: "error",
+          title: "Couldn't generate a cleaning plan",
+          message: err instanceof Error ? err.message : "Unknown error",
+          retry: { action: "retry_clean_plan", data: { datasetId }, label: "Try again" },
+        }),
       );
       clearWorkflow(sessionId);
     } finally {
@@ -499,7 +504,12 @@ export default function Chat() {
     } catch (err) {
       addMessage(
         sessionId,
-        createMessage("system", `Cleaning error: ${err instanceof Error ? err.message : "Unknown error"}`),
+        createMessage("assistant", "", {
+          type: "error",
+          title: "Cleaning failed",
+          message: err instanceof Error ? err.message : "Unknown error",
+          retry: { action: "apply_cleaning", data: { datasetId, steps }, label: "Retry cleaning" },
+        }),
       );
       clearWorkflow(sessionId);
     } finally {
@@ -549,6 +559,14 @@ export default function Chat() {
         await applyCleaningSteps(sessionId, datasetId, steps);
       }
 
+      if (action === "retry_clean_plan" && data) {
+        const sessionId = ownerSessionId ?? activeSessionId;
+        if (!sessionId) return;
+        const { datasetId } = data as { datasetId?: string };
+        if (!datasetId) return;
+        await runCleaningWorkflow(sessionId, datasetId);
+      }
+
       if (action === "apply_manipulation" && data) {
         const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
@@ -594,7 +612,15 @@ export default function Chat() {
           };
           addMessage(sessionId, createMessage("assistant", "", resultCard));
         } catch (err) {
-          addMessage(sessionId, createMessage("system", `Apply failed: ${err instanceof Error ? err.message : "Unknown error"}`));
+          addMessage(
+            sessionId,
+            createMessage("assistant", "", {
+              type: "error",
+              title: "Couldn't apply changes",
+              message: err instanceof Error ? err.message : "Unknown error",
+              retry: { action: "apply_manipulation", data, label: "Retry" },
+            }),
+          );
         } finally {
           setSending(false);
         }

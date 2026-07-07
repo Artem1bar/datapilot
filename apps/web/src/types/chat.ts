@@ -87,6 +87,23 @@ export interface CleaningResultsPayload {
   readonly unresolvableFlags?: readonly string[];
 }
 
+export interface ErrorCardPayload {
+  readonly type: "error";
+  readonly title: string;
+  readonly message: string;
+  /**
+   * Optional re-runnable action. When set, the card shows a "Try again" button
+   * that re-dispatches `action`/`data` through the same card `onAction` handler
+   * the original operation used, so retry reuses existing dispatch logic. Must
+   * be serializable — it is persisted with the message.
+   */
+  readonly retry?: {
+    readonly action: string;
+    readonly data?: unknown;
+    readonly label?: string;
+  };
+}
+
 export interface DataOverviewPayload {
   readonly type: "data_overview";
   readonly rowCount: number;
@@ -250,7 +267,8 @@ export type CardPayload =
   | DataPreviewPayload
   | DataDictionaryPayload
   | ComparisonPayload
-  | HistoryPayload;
+  | HistoryPayload
+  | ErrorCardPayload;
 
 /** Extended message type with optional card payloads. */
 export interface ChatMessageV2 {
