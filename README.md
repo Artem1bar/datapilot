@@ -52,6 +52,17 @@ packages/               # Shared TypeScript types
 | Cache / Pub-Sub | Redis |
 | Deployment | Vercel (frontend), Docker Compose (backend) |
 
+## Privacy & data handling
+
+Uploaded files are processed by Anthropic's Claude API: a sample of rows and
+the column profile are sent to Claude to generate cleaning plans, run
+verification, answer analysis questions, and build data dictionaries. Data is
+not used to train models (see [Anthropic's data usage policy](https://www.anthropic.com/legal/commercial-terms)).
+
+Files are stored in your configured object storage (MinIO/R2) and deleting a
+dataset cascades to remove its stored objects; a daily job also purges orphaned
+uploads. Do not upload data you are not permitted to send to a third-party API.
+
 ## Local Development
 
 ### Prerequisites
@@ -107,9 +118,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**452 tests total** (403 backend + 49 frontend).
+**508 tests total** (451 backend + 57 frontend).
 
-### Backend (403 tests) — run from `apps/api/`
+### Backend (451 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -143,7 +154,7 @@ uv run pytest
 | `test_progress_reporting.py` / `test_task_db.py` | Per-stage job progress persistence, shared worker DB engine |
 | `test_structured_output.py` | Forced-tool-use helper: rate-limit retries, confidence coercion, error paths |
 
-### Frontend (49 tests) — run from `apps/web/`
+### Frontend (57 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
