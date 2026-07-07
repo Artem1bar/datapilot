@@ -62,7 +62,9 @@ def _make_db(query_result=None) -> AsyncMock:
     db.delete = AsyncMock()
     result = MagicMock()
     result.scalar_one_or_none.return_value = query_result
-    result.scalars.return_value.all.return_value = query_result if isinstance(query_result, list) else []
+    result.scalars.return_value.all.return_value = (
+        query_result if isinstance(query_result, list) else []
+    )
     db.execute.return_value = result
     return db
 
@@ -70,6 +72,7 @@ def _make_db(query_result=None) -> AsyncMock:
 # ---------------------------------------------------------------------------
 # save_recipe
 # ---------------------------------------------------------------------------
+
 
 class TestSaveRecipe:
     @pytest.mark.asyncio
@@ -85,6 +88,7 @@ class TestSaveRecipe:
     @pytest.mark.asyncio
     async def test_no_steps_raises_400(self):
         from fastapi import HTTPException
+
         db = _make_db()
         body = SaveRecipeRequest(name="Empty")
         with pytest.raises(HTTPException) as exc_info:
@@ -95,6 +99,7 @@ class TestSaveRecipe:
     async def test_invalid_step_schema_raises_422(self):
         """A step missing required 'operation' field should raise 422."""
         from fastapi import HTTPException
+
         db = _make_db()
         bad_steps = [{"no_operation_field": "bad"}]
         body = SaveRecipeRequest(name="Bad", steps=bad_steps)
@@ -122,6 +127,7 @@ class TestSaveRecipe:
     @pytest.mark.asyncio
     async def test_save_from_missing_job_raises_404(self):
         from fastapi import HTTPException
+
         db = _make_db(query_result=None)
         body = SaveRecipeRequest(name="From Job", job_id=JOB_ID)
         with pytest.raises(HTTPException) as exc_info:
@@ -132,6 +138,7 @@ class TestSaveRecipe:
 # ---------------------------------------------------------------------------
 # list_recipes
 # ---------------------------------------------------------------------------
+
 
 class TestListRecipes:
     @pytest.mark.asyncio
@@ -154,6 +161,7 @@ class TestListRecipes:
 # get_recipe
 # ---------------------------------------------------------------------------
 
+
 class TestGetRecipe:
     @pytest.mark.asyncio
     async def test_returns_own_recipe(self):
@@ -168,6 +176,7 @@ class TestGetRecipe:
     async def test_cross_user_access_raises_404(self):
         """User B must not be able to retrieve User A's recipe."""
         from fastapi import HTTPException
+
         db = _make_db(query_result=None)  # DB filters by user_id, returns nothing for B
         with pytest.raises(HTTPException) as exc_info:
             await get_recipe(RECIPE_ID, USER_B, db)
@@ -177,6 +186,7 @@ class TestGetRecipe:
 # ---------------------------------------------------------------------------
 # delete_recipe
 # ---------------------------------------------------------------------------
+
 
 class TestDeleteRecipe:
     @pytest.mark.asyncio
@@ -190,6 +200,7 @@ class TestDeleteRecipe:
     @pytest.mark.asyncio
     async def test_cross_user_delete_raises_404(self):
         from fastapi import HTTPException
+
         db = _make_db(query_result=None)
         with pytest.raises(HTTPException) as exc_info:
             await delete_recipe(RECIPE_ID, USER_B, db)
@@ -200,6 +211,7 @@ class TestDeleteRecipe:
 # apply_recipe
 # ---------------------------------------------------------------------------
 
+
 class TestApplyRecipe:
     @pytest.mark.asyncio
     async def test_apply_creates_job_with_clean_type(self):
@@ -209,6 +221,8 @@ class TestApplyRecipe:
         dataset.id = DATASET_ID
         dataset.filename = "data.csv"
         dataset.user_id = USER_A.id
+        dataset.status = "ready"
+        dataset.profile_json = {"columns": {"name": {}}}
 
         db = AsyncMock()
         db.add = MagicMock()
@@ -239,6 +253,8 @@ class TestApplyRecipe:
         dataset.id = DATASET_ID
         dataset.filename = "data.csv"
         dataset.user_id = USER_A.id
+        dataset.status = "ready"
+        dataset.profile_json = {"columns": {"name": {}}}
 
         db = AsyncMock()
         db.add = MagicMock()
@@ -261,6 +277,7 @@ class TestApplyRecipe:
     @pytest.mark.asyncio
     async def test_apply_missing_recipe_raises_404(self):
         from fastapi import HTTPException
+
         db = AsyncMock()
         db.execute.return_value = _execute_result(None)
 
@@ -272,6 +289,7 @@ class TestApplyRecipe:
     @pytest.mark.asyncio
     async def test_apply_missing_dataset_raises_404(self):
         from fastapi import HTTPException
+
         recipe = _make_recipe(USER_A.id)
         db = AsyncMock()
         db.execute.side_effect = [
@@ -284,10 +302,69 @@ class TestApplyRecipe:
                 await apply_recipe(RECIPE_ID, ApplyRecipeRequest(dataset_id=DATASET_ID), USER_A, db)
         assert exc_info.value.status_code == 404
 
+    @pytest.mark.asyncio
+    async def test_apply_recipe_with_missing_column_raises_422(self):
+        """A recipe referencing a column absent from the target dataset fails
+        fast with 422, naming the offending column, and dispatches no job."""
+        from fastapi import HTTPException
+
+        recipe = _make_recipe(
+            USER_A.id,
+            steps=[
+                {
+                    "operation": "strip_whitespace",
+                    "column": "ghost_col",
+                    "params": {},
+                    "description": "x",
+                }
+            ],
+        )
+        dataset = MagicMock()
+        dataset.id = DATASET_ID
+        dataset.filename = "data.csv"
+        dataset.user_id = USER_A.id
+        dataset.status = "ready"
+        dataset.profile_json = {"columns": {"name": {}, "age": {}}}
+
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.execute.side_effect = [_execute_result(recipe), _execute_result(dataset)]
+
+        with patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock):
+            with pytest.raises(HTTPException) as exc_info:
+                await apply_recipe(RECIPE_ID, ApplyRecipeRequest(dataset_id=DATASET_ID), USER_A, db)
+        assert exc_info.value.status_code == 422
+        assert "ghost_col" in str(exc_info.value.detail)
+        db.add.assert_not_called()  # no job created or dispatched
+
+    @pytest.mark.asyncio
+    async def test_apply_recipe_to_unprofiled_dataset_raises_409(self):
+        """A recipe cannot be applied before the dataset has been profiled."""
+        from fastapi import HTTPException
+
+        recipe = _make_recipe(USER_A.id)
+        dataset = MagicMock()
+        dataset.id = DATASET_ID
+        dataset.filename = "data.csv"
+        dataset.user_id = USER_A.id
+        dataset.status = "profiling"
+        dataset.profile_json = None
+
+        db = AsyncMock()
+        db.add = MagicMock()
+        db.execute.side_effect = [_execute_result(recipe), _execute_result(dataset)]
+
+        with patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock):
+            with pytest.raises(HTTPException) as exc_info:
+                await apply_recipe(RECIPE_ID, ApplyRecipeRequest(dataset_id=DATASET_ID), USER_A, db)
+        assert exc_info.value.status_code == 409
+        db.add.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # Internal helper
 # ---------------------------------------------------------------------------
+
 
 def _execute_result(value: Any) -> MagicMock:
     result = MagicMock()

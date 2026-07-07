@@ -1278,6 +1278,11 @@ _OPERATION_MAP: dict[str, Any] = {
 }
 
 
+def supported_operations() -> set[str]:
+    """Return the set of cleaning operation names the executor can run."""
+    return set(_OPERATION_MAP)
+
+
 # ---------------------------------------------------------------------------
 # Plan execution
 # ---------------------------------------------------------------------------
