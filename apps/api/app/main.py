@@ -42,6 +42,14 @@ def create_app() -> FastAPI:
             "Set CORS_ORIGINS to explicit origins (e.g. 'http://localhost:5174')."
         )
 
+    # Guard: never boot production with default/missing secrets.
+    secret_problems = settings.production_secret_problems()
+    if secret_problems:
+        raise RuntimeError(
+            "Refusing to start in production with insecure configuration:\n  - "
+            + "\n  - ".join(secret_problems)
+        )
+
     # CORS — explicit methods/headers instead of wildcards
     app.add_middleware(
         CORSMiddleware,

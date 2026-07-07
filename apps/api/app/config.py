@@ -59,5 +59,24 @@ class Settings(BaseSettings):
     def cors_origins_list(self) -> list[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
 
+    def production_secret_problems(self) -> list[str]:
+        """List insecure-default or missing secrets when ENVIRONMENT=production.
+
+        Empty outside production or when everything is configured — the app
+        refuses to start if this returns anything in production.
+        """
+        if self.ENVIRONMENT != "production":
+            return []
+        problems: list[str] = []
+        if self.R2_ACCESS_KEY_ID == "minioadmin":
+            problems.append("R2_ACCESS_KEY_ID is the insecure default 'minioadmin'")
+        if self.R2_SECRET_ACCESS_KEY == "minioadmin":
+            problems.append("R2_SECRET_ACCESS_KEY is the insecure default 'minioadmin'")
+        if "datapilot:datapilot@localhost" in self.DATABASE_URL:
+            problems.append("DATABASE_URL uses the default local credentials")
+        if not self.ANTHROPIC_API_KEY:
+            problems.append("ANTHROPIC_API_KEY is not set")
+        return problems
+
 
 settings = Settings()
