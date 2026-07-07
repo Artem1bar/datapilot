@@ -8,30 +8,37 @@ _Created 2026-07-07 from a fresh four-track audit (backend security/deploy, clea
 
 ## Progress log — overnight session 2026-07-07 (branch `phase-2-product-quality`)
 
-All items below are committed with tests; end-of-session state is **428 backend + 54 frontend tests green, ruff/eslint/tsc clean**. 15 commits, TDD throughout.
+All items below are committed with tests on branch `phase-2-product-quality` (**not merged**). End-of-session state: **451 backend + 57 frontend tests green, ruff/eslint/tsc clean, Dockerfile build-verified, migration verified against real Postgres, auth security-reviewed**. ~31 commits, TDD throughout.
 
-**Phase 2A — Cleaning brain (COMPLETE, all 7 items):**
-- ✅ Null masking (CRITICAL): shared `to_sample_records()` renders nulls as `<null>` instead of `fillna("")`, in the cleaning sample and the analysis/dictionary/manipulation model samples. `9a135d4`, `9303ce1`
-- ✅ Data-driven caps (HIGH) + prompt tone (MEDIUM): profile now carries p95/p99/mad; deleted the hardcoded per-domain dollar table from both prompts; caps derived from each column's own distribution. `22a1d8a`
-- ✅ Demote survey/expense heuristics (HIGH): `detect_domain()` gates Qualtrics/incomplete/expense-regex behind a detected-or-set `survey` domain; generic data uses dtype only. `e4566ee`
-- ✅ Configurable model tiers (MEDIUM): five hardcoded model IDs → env-backed config, guard test. `3cf6b2e`
-- ✅ Validate recipe steps before dispatch (MEDIUM): `apply_recipe` runs `validate_plan` vs the target schema → 422 naming the missing column. `89500f8`
-- ✅ Remediation op subset in code (LOW): `REMEDIATION_OPS` enforced in the remediation loop + injected into the verification prompt; removed the drift-prone hardcoded list. `5e615b9`
+**Phase 2 — Product quality (COMPLETE except lower-priority 2B UX):**
+- ✅ 2A Cleaning brain — all 7 items: null masking (CRITICAL), data-driven caps + tone (deleted the dollar table; profile carries p95/p99/mad), demote survey/expense heuristics behind a detected `domain`, configurable model tiers, recipe validation (422 naming the missing column), remediation-op subset enforced from one source.
+- ✅ 2C Settings surface — `preferences` JSONB on users + `UserPreferences` schema (single source of defaults), `GET/PUT /settings`, Alembic migration (verified: `upgrade` + `alembic check` clean against an ephemeral Postgres), `env.py` now injects `DATABASE_URL`. Prefs (domain / ai_sample_size / custom_instructions) threaded into plan generation; a Cleaning-settings tab is wired to the API (component-tested; **live QA pending**).
+- ✅ 2B correctness core: wrong-session card actions, per-session workflow state, persisted applied-state, dead-code deletion + README truth.
+- ⬜ 2B remaining (need the running app): re-attach to jobs (#4), cleaning undo (#5), before/after visibility (#6 — needs version-id plumbing, bigger than it looks), upload UX feedback (#7), error cards (#8), interactive QA (#10).
 
-**Phase 2B — Frontend correctness (4 of 10):**
-- ✅ Wrong-session card actions (HIGH): `ChatStream` binds the owning sessionId into every card action; RTL test. `23ee0d5`
-- ✅ Per-session workflow state (MEDIUM): `workflowStateBySession` replaces the global; isolation tests. `75e6048`
-- ✅ Persist card applied state (LOW): `applied` on the payload + store patch survives remount. `fcd6c40`
-- ✅ Delete dead code + README truth (LOW): removed ws.py/test_ws.py + 6 orphaned pages; fixed WebSocket/React-18 drift. `fe7dc42`
-- ⬜ Remaining 2B: re-attach to running jobs (#4), cleaning undo (#5), before/after visibility (#6 — note: no comparison trigger exists in FE yet, needs version-id plumbing), upload UX feedback (#7, backend cap now exists), error cards w/ retry (#8), interactive QA (#10).
+**Phase 3 — Security & auth (COMPLETE):**
+- ✅ Clerk JWT verification (CRITICAL): real RS256/JWKS (issuer + expiry checked, `alg=none`/algorithm-confusion resistant); `DEV_AUTH_BYPASS` honored only outside production. **Security-reviewed — no exploitable bypass**; the two flagged config gaps were fixed (`CLERK_JWT_ISSUER`/`CLERK_WEBHOOK_SECRET` now in the prod guard; `ENVIRONMENT` is a `Literal`).
+- ✅ Clerk webhook hardened with `svix` (fail-closed, replay-resistant); **Supabase remnants deleted entirely**.
+- ✅ Ownership audit (all routers filter by `user_id`) + cross-user 404 tests.
+- ✅ Frontend Clerk gate + token attach (gated on `VITE_CLERK_PUBLISHABLE_KEY`; **live sign-in QA pending**).
+- ✅ (earlier) export formula-injection (CRITICAL), rate limits, upload validation, secrets fail-fast.
 
-**Phase 3 — Security hardening (pulled forward; the "small enough to land regardless" items):**
-- ✅ Export formula-injection (CRITICAL): shared sanitizer prefixes `= + - @ \t \r`-leading string cells for CSV/XLSX; hostile-fixture tests. `0659677`
-- ✅ Rate-limit the 3 open AI endpoints (HIGH): chat/manipulation-parse/dictionary now use `check_rate_limit`. `78b5bdc`
-- ✅ Upload validation + size cap (HIGH): `MAX_UPLOAD_BYTES` (50 MB) + magic-byte check on both upload paths. `ac30983`
-- ✅ Secrets hygiene: prod fails fast on default secrets; removed unused RestrictedPython. `0e27fe1`
+**Phase 4 — Deployment & operations (largely COMPLETE):**
+- ✅ Multi-stage uv Dockerfile (api + worker), non-root, healthcheck — **build- and import-verified** against Docker.
+- ✅ Frontend↔backend wiring: API origin added to the `vercel.json` CSP; `.env.example` rewritten (all current vars; Supabase dropped).
+- ✅ Observability: structured JSON logging + request-id middleware.
+- ✅ CI: real Postgres/Redis services + `alembic upgrade`/`check` migration hygiene. Deploy scaffold (`deploy.yml`) builds/pushes to GHCR + migrates (manual until host + secrets chosen).
+- ✅ Data lifecycle: daily Celery-beat orphaned-upload purge (scoped to `uploads/`, 24h age-guarded).
+- ⬜ Sentry (needs DSN + dep — deferred); managed-Postgres backups (host concern); docker-compose literal passwords → env interpolation (**deferred: would disrupt the existing local DB volume — needs your .env coordination**).
 
-**Not started (need decisions/services/running app):** 2C Settings surface (needs the Alembic migration + a real DB to verify), Phase 3 auth/Clerk-JWT (blocked on auth-provider decision), Phase 4 deploy, Phase 5 CI-with-services/E2E/conftest, Phase 6 launch. The file-size ceiling was defaulted to 50 MB (still your call — `MAX_UPLOAD_BYTES` is configurable).
+**Phase 6 — Launch (started):**
+- ✅ AI cost controls: kill-switch (`AI_ENABLED`) + per-user daily budget shared across all AI endpoints.
+- ✅ Privacy/data-handling note in README; test counts corrected.
+- ⬜ Remaining: onboarding demo, full docs pass, launch checklist.
+
+**Decisions I took** (from the plan's "Decisions needed"): auth provider → **Clerk** (Supabase deleted); file-size ceiling → **50 MB** (`MAX_UPLOAD_BYTES`, configurable). Still yours: **backend host** (Railway/Fly — `deploy.yml` is host-agnostic scaffolding) and **launch scope** (private beta vs public sign-ups).
+
+**Needs a live environment to finish/verify:** Clerk sign-in flow, the settings UI + remaining 2B UX (`/qa` on the running app), E2E (Playwright against the compose stack), Phase 5 conftest/coverage, and the actual deploy (host + secrets). One thing to sanity-check: the verification/manipulation model id `claude-sonnet-4-6` was preserved verbatim into config — confirm it's real.
 
 ---
 
