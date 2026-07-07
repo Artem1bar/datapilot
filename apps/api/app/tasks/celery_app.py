@@ -27,7 +27,14 @@ def create_celery_app() -> Celery:
             "app.tasks.profile_task",
             "app.tasks.cleaning_task",
             "app.tasks.export_task",
+            "app.tasks.cleanup_task",
         ],
+        beat_schedule={
+            "cleanup-orphaned-storage-daily": {
+                "task": "cleanup_orphaned_storage",
+                "schedule": 24 * 60 * 60,  # once a day
+            },
+        },
     )
 
     return app
