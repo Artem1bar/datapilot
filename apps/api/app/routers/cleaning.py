@@ -17,6 +17,7 @@ from app.deps import CurrentUser, DBSession
 from app.models.dataset import Dataset
 from app.models.job import Job
 from app.schemas import CleaningStep, JobResponse, VerificationResult
+from app.schemas.settings import merge_preferences
 from app.services.storage import download_file_bytes
 from app.utils.dataframe import read_dataframe, to_sample_records
 
@@ -119,8 +120,14 @@ async def create_cleaning_plan(
             detail="Failed to download dataset file from storage",
         )
 
-    # Read ALL rows (capped at 500 for very large files) so Claude sees every value
-    sample_rows = await asyncio.to_thread(_read_all_rows, file_bytes, dataset.filename)
+    # Load the user's cleaning preferences (defaults when unset).
+    prefs = merge_preferences(user.preferences)
+    domain_pref = None if prefs.domain == "auto" else prefs.domain
+
+    # Read rows up to the user's configured sample size so Claude sees the data.
+    sample_rows = await asyncio.to_thread(
+        _read_all_rows, file_bytes, dataset.filename, prefs.ai_sample_size
+    )
 
     # Always compute fresh data-quality flags from the actual file — don't rely on
     # whatever the profiler stored (it may have run before this detection code existed)
@@ -128,7 +135,7 @@ async def create_cleaning_plan(
         from app.tasks.profile_task import detect_quality_issues
 
         df = read_dataframe(fb, fname)
-        return detect_quality_issues(df)
+        return detect_quality_issues(df, domain=domain_pref)
 
     fresh_quality = await asyncio.to_thread(
         _compute_fresh_quality_flags, file_bytes, dataset.filename
@@ -151,7 +158,10 @@ async def create_cleaning_plan(
     # Generate cleaning plan via Claude
     from app.services.cleaning import generate_cleaning_plan
 
-    user_instructions = body.user_instructions if body else None
+    # Combine the user's standing custom instructions with any per-request ones.
+    per_request = body.user_instructions if body else None
+    parts = [p for p in (prefs.custom_instructions.strip(), (per_request or "").strip()) if p]
+    user_instructions = "\n\n".join(parts) or None
 
     try:
         steps = await asyncio.to_thread(
