@@ -19,6 +19,7 @@ from sqlalchemy.exc import NoResultFound
 
 from app.services.storage import download_file_bytes
 from app.tasks.celery_app import celery_app
+from app.utils.dataframe import read_dataframe
 
 
 def _to_python(obj):
@@ -420,24 +421,6 @@ def _compute_profile(df: pd.DataFrame) -> dict:
     return _to_python(profile)
 
 
-def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    """Read bytes into a pandas DataFrame based on file extension."""
-    lower = filename.lower()
-    if lower.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(file_bytes))
-    elif lower.endswith((".xls", ".xlsx")):
-        return pd.read_excel(io.BytesIO(file_bytes))
-    elif lower.endswith(".parquet"):
-        return pd.read_parquet(io.BytesIO(file_bytes))
-    elif lower.endswith(".json"):
-        return pd.read_json(io.BytesIO(file_bytes))
-    elif lower.endswith((".tsv", ".tab")):
-        return pd.read_csv(io.BytesIO(file_bytes), sep="\t")
-    else:
-        # Default to CSV
-        return pd.read_csv(io.BytesIO(file_bytes))
-
-
 @celery_app.task(bind=True, name="profile_dataset", max_retries=2)
 def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
     """Download a dataset from MinIO, profile it, and store results in the DB."""
@@ -467,7 +450,7 @@ def profile_dataset(self, dataset_id: str, job_id: str) -> dict:
         _publish_progress_sync(job_id, "running", 30, "Parsing file")
 
         # Parse
-        df = _read_dataframe(file_bytes, dataset.filename)
+        df = read_dataframe(file_bytes, dataset.filename)
         _publish_progress_sync(job_id, "running", 50, "Computing statistics")
 
         # Profile

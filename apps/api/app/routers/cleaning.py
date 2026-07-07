@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import logging
 import uuid
@@ -19,6 +18,7 @@ from app.models.dataset import Dataset
 from app.models.job import Job
 from app.schemas import CleaningStep, JobResponse, VerificationResult
 from app.services.storage import download_file_bytes
+from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -29,8 +29,10 @@ router = APIRouter(tags=["cleaning"])
 # Request schemas
 # ---------------------------------------------------------------------------
 
+
 class GeneratePlanRequest(BaseModel):
     """Optional request body for generating a cleaning plan with custom instructions."""
+
     user_instructions: str | None = Field(
         None,
         max_length=2000,
@@ -40,31 +42,13 @@ class GeneratePlanRequest(BaseModel):
 
 class ApplyCleaningRequest(BaseModel):
     """Request body for applying a (possibly modified) cleaning plan."""
+
     steps: list[CleaningStep] = Field(..., min_length=1, description="Cleaning steps to apply")
 
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:  # noqa: F821
-    """Read the full file into a DataFrame."""
-    import pandas as pd
-
-    lower = filename.lower()
-    buf = io.BytesIO(file_bytes)
-    if lower.endswith(".csv"):
-        return pd.read_csv(buf)
-    elif lower.endswith((".xls", ".xlsx")):
-        return pd.read_excel(buf)
-    elif lower.endswith(".parquet"):
-        return pd.read_parquet(buf)
-    elif lower.endswith(".json"):
-        return pd.read_json(buf)
-    elif lower.endswith((".tsv", ".tab")):
-        return pd.read_csv(buf, sep="\t")
-    else:
-        return pd.read_csv(buf)
 
 
 def _read_all_rows(file_bytes: bytes, filename: str, max_rows: int = 500) -> list[dict[str, Any]]:
@@ -73,10 +57,11 @@ def _read_all_rows(file_bytes: bytes, filename: str, max_rows: int = 500) -> lis
     Sends ALL rows for small datasets so the AI sees every value.
     Caps at max_rows for large datasets to stay within token limits.
     """
-    df = _read_dataframe(file_bytes, filename)
+    df = read_dataframe(file_bytes, filename)
     if len(df) > max_rows:
         # For large datasets, take first 250 + 250 random interior rows
         import pandas as pd
+
         head = df.head(250)
         rest = df.iloc[250:].sample(min(250, len(df) - 250), random_state=42)
         df = pd.concat([head, rest]).reset_index(drop=True)
@@ -84,7 +69,9 @@ def _read_all_rows(file_bytes: bytes, filename: str, max_rows: int = 500) -> lis
 
 
 async def _get_dataset_or_404(
-    dataset_id: uuid.UUID, user_id: uuid.UUID, db,
+    dataset_id: uuid.UUID,
+    user_id: uuid.UUID,
+    db,
 ) -> Dataset:
     """Fetch a dataset owned by the user or raise 404."""
     result = await db.execute(
@@ -99,6 +86,7 @@ async def _get_dataset_or_404(
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
 
 @router.post("/{dataset_id}/plan", status_code=status.HTTP_200_OK)
 async def create_cleaning_plan(
@@ -118,7 +106,7 @@ async def create_cleaning_plan(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Dataset must be profiled before generating a cleaning plan. "
-                   f"Current status: '{dataset.status}'",
+            f"Current status: '{dataset.status}'",
         )
 
     # Download file — run sync IO in thread
@@ -138,10 +126,13 @@ async def create_cleaning_plan(
     # whatever the profiler stored (it may have run before this detection code existed)
     def _compute_fresh_quality_flags(fb: bytes, fname: str) -> dict:
         from app.tasks.profile_task import detect_quality_issues
-        df = _read_dataframe(fb, fname)
+
+        df = read_dataframe(fb, fname)
         return detect_quality_issues(df)
 
-    fresh_quality = await asyncio.to_thread(_compute_fresh_quality_flags, file_bytes, dataset.filename)
+    fresh_quality = await asyncio.to_thread(
+        _compute_fresh_quality_flags, file_bytes, dataset.filename
+    )
 
     # Merge fresh flags into the profile (always override stale stored flags)
     profile_with_flags = dict(dataset.profile_json or {})
@@ -152,7 +143,9 @@ async def create_cleaning_plan(
 
     logger.info(
         "Dataset %s: %d rows sent to Claude, %d quality flags detected",
-        dataset_id, len(sample_rows), len(fresh_quality)
+        dataset_id,
+        len(sample_rows),
+        len(fresh_quality),
     )
 
     # Generate cleaning plan via Claude
@@ -246,7 +239,7 @@ async def apply_cleaning_plan(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=f"Dataset must be in 'ready' state to apply cleaning. "
-                   f"Current status: '{dataset.status}'",
+            f"Current status: '{dataset.status}'",
         )
 
     # Serialize steps for the Celery task

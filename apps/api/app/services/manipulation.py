@@ -1,4 +1,5 @@
 """Spreadsheet manipulation service — parses natural language commands into structured operations."""
+
 from __future__ import annotations
 
 import io
@@ -13,6 +14,7 @@ import pandas as pd
 from app.config import settings
 from app.services.manipulation_executor import ManipulationError, execute_operations
 from app.services.storage import download_file_bytes, upload_file_bytes
+from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +27,7 @@ def _get_client() -> anthropic.Anthropic:
     if _anthropic_client is None:
         _anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key or None)
     return _anthropic_client
+
 
 _SYSTEM_PROMPT = """You are a data manipulation assistant. Given a user command and dataset context (column names, dtypes, sample rows), parse the command into a list of structured operations.
 
@@ -54,19 +57,6 @@ IMPORTANT:
 - For compound commands (e.g., "delete X and Y, then rename Z"), return multiple operations
 - If the command is ambiguous, make your best guess and add a clear description
 - Return ONLY the JSON array, no markdown, no explanation"""
-
-
-def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    lower = filename.lower()
-    if lower.endswith((".xlsx", ".xls")):
-        return pd.read_excel(io.BytesIO(file_bytes))
-    elif lower.endswith(".parquet"):
-        return pd.read_parquet(io.BytesIO(file_bytes))
-    elif lower.endswith(".tsv"):
-        return pd.read_csv(io.BytesIO(file_bytes), sep="\t")
-    elif lower.endswith(".json"):
-        return pd.read_json(io.BytesIO(file_bytes))
-    return pd.read_csv(io.BytesIO(file_bytes))
 
 
 def _dataframe_to_bytes(df: pd.DataFrame, filename: str) -> bytes:
@@ -150,7 +140,9 @@ def generate_preview(
     warnings = []
     removed_cols = set(before_cols) - set(after_cols)
     if removed_cols:
-        warnings.append(f"Will delete {len(removed_cols)} column(s): {', '.join(sorted(removed_cols))}")
+        warnings.append(
+            f"Will delete {len(removed_cols)} column(s): {', '.join(sorted(removed_cols))}"
+        )
     rows_removed = before_rows - len(result_df)
     if rows_removed > 0:
         warnings.append(f"Will remove {rows_removed} row(s)")
@@ -186,7 +178,7 @@ def apply_manipulation(
 
     Returns (result_df, metadata).
     """
-    df = _read_dataframe(file_bytes, filename)
+    df = read_dataframe(file_bytes, filename)
     before_cols = set(df.columns)
 
     result_df = execute_operations(df, operations)

@@ -1,12 +1,11 @@
 """Spreadsheet manipulation endpoints — parse, preview, apply, undo."""
+
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
 import uuid
 
-import pandas as pd
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
@@ -28,23 +27,11 @@ from app.services.manipulation import (
 )
 from app.services.manipulation_executor import ManipulationError as ExecError
 from app.services.storage import download_file_bytes, upload_file_bytes
+from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["manipulation"])
-
-
-def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    lower = filename.lower()
-    if lower.endswith((".xlsx", ".xls")):
-        return pd.read_excel(io.BytesIO(file_bytes))
-    elif lower.endswith(".parquet"):
-        return pd.read_parquet(io.BytesIO(file_bytes))
-    elif lower.endswith(".tsv"):
-        return pd.read_csv(io.BytesIO(file_bytes), sep="\t")
-    elif lower.endswith(".json"):
-        return pd.read_json(io.BytesIO(file_bytes))
-    return pd.read_csv(io.BytesIO(file_bytes))
 
 
 async def _get_dataset_or_404(dataset_id: uuid.UUID, user_id: uuid.UUID, db) -> Dataset:
@@ -75,7 +62,7 @@ async def parse_command(
 
     # Download and read the dataset
     file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
-    df = await asyncio.to_thread(_read_dataframe, file_bytes, dataset.filename)
+    df = await asyncio.to_thread(read_dataframe, file_bytes, dataset.filename)
 
     column_names = list(df.columns)
     dtypes = {col: str(df[col].dtype) for col in df.columns}
@@ -168,7 +155,7 @@ async def undo_manipulation(
     await asyncio.to_thread(upload_file_bytes, dataset.r2_key, snapshot_bytes)
 
     # Read the restored file to get updated metadata
-    df = await asyncio.to_thread(_read_dataframe, snapshot_bytes, dataset.filename)
+    df = await asyncio.to_thread(read_dataframe, snapshot_bytes, dataset.filename)
     dataset.row_count = len(df)
     dataset.col_count = len(df.columns)
     await db.commit()

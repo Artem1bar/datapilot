@@ -6,19 +6,18 @@ service, uploads the result back to storage, and updates the job record.
 
 from __future__ import annotations
 
-import io
 import json
 import logging
 import uuid
 from datetime import UTC, datetime
 
-import pandas as pd
 from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound
 
 from app.config import settings
 from app.services.storage import download_file_bytes, get_s3_client
 from app.tasks.celery_app import celery_app
+from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -35,23 +34,6 @@ def _publish_progress_sync(job_id: str, status: str, progress: int, message: str
     from app.tasks._progress import publish_progress_sync
 
     publish_progress_sync(job_id, status, progress, message)
-
-
-def _read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
-    """Read bytes into a pandas DataFrame based on file extension."""
-    lower = filename.lower()
-    if lower.endswith(".csv"):
-        return pd.read_csv(io.BytesIO(file_bytes))
-    elif lower.endswith((".xls", ".xlsx")):
-        return pd.read_excel(io.BytesIO(file_bytes))
-    elif lower.endswith(".parquet"):
-        return pd.read_parquet(io.BytesIO(file_bytes))
-    elif lower.endswith(".json"):
-        return pd.read_json(io.BytesIO(file_bytes))
-    elif lower.endswith((".tsv", ".tab")):
-        return pd.read_csv(io.BytesIO(file_bytes), sep="\t")
-    else:
-        return pd.read_csv(io.BytesIO(file_bytes))
 
 
 @celery_app.task(bind=True, name="export_dataset", max_retries=2)
@@ -107,7 +89,7 @@ def export_dataset(
         _publish_progress_sync(job_id, "running", 30, "Parsing file")
 
         # Parse the file
-        df = _read_dataframe(file_bytes, dataset.filename)
+        df = read_dataframe(file_bytes, dataset.filename)
         _publish_progress_sync(job_id, "running", 50, f"Exporting to {format}")
 
         # Parse columns if provided

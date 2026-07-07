@@ -31,6 +31,7 @@ from app.services.storage import (
     generate_upload_key,
     upload_file_bytes,
 )
+from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -241,9 +242,7 @@ async def get_schema(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
 
     file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
-    from app.tasks.profile_task import _read_dataframe
-
-    df = await asyncio.to_thread(_read_dataframe, file_bytes, dataset.filename)
+    df = await asyncio.to_thread(read_dataframe, file_bytes, dataset.filename)
 
     from app.services.schema_inference import infer_schema
 
@@ -266,9 +265,7 @@ async def validate_schema(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
 
     file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
-    from app.tasks.profile_task import _read_dataframe
-
-    df = await asyncio.to_thread(_read_dataframe, file_bytes, dataset.filename)
+    df = await asyncio.to_thread(read_dataframe, file_bytes, dataset.filename)
 
     from app.services.schema_inference import infer_schema, validate_against_schema
 
@@ -304,9 +301,7 @@ async def preview_data(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
 
     file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
-    from app.tasks.profile_task import _read_dataframe
-
-    df = await asyncio.to_thread(_read_dataframe, file_bytes, dataset.filename)
+    df = await asyncio.to_thread(read_dataframe, file_bytes, dataset.filename)
 
     # Apply filter
     if filter_column and filter_value and filter_column in df.columns:
@@ -406,10 +401,8 @@ async def compare_datasets_endpoint(
     bytes1 = await asyncio.to_thread(download_file_bytes, dataset1.r2_key)
     bytes2 = await asyncio.to_thread(download_file_bytes, dataset2.r2_key)
 
-    from app.tasks.profile_task import _read_dataframe
-
-    df1 = await asyncio.to_thread(_read_dataframe, bytes1, dataset1.filename)
-    df2 = await asyncio.to_thread(_read_dataframe, bytes2, dataset2.filename)
+    df1 = await asyncio.to_thread(read_dataframe, bytes1, dataset1.filename)
+    df2 = await asyncio.to_thread(read_dataframe, bytes2, dataset2.filename)
 
     report = await asyncio.to_thread(compare_fn, df1, df2)
     report["datasets"] = {
