@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.logging_config import configure_logging
+from app.middleware import RequestContextMiddleware
 
 
 @asynccontextmanager
@@ -29,6 +31,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Build the FastAPI application with all routers and middleware."""
+    configure_logging(json_logs=settings.ENVIRONMENT != "development")
+
     app = FastAPI(
         title="DataPilot API",
         version="0.1.0",
@@ -58,6 +62,9 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
+
+    # Outermost: per-request id + access logging (added last = wraps CORS).
+    app.add_middleware(RequestContextMiddleware)
 
     # --- Mount routers ---
     from app.routers.analysis import router as analysis_router
