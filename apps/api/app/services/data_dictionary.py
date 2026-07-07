@@ -1,4 +1,5 @@
 """Generate AI-powered data dictionaries for datasets."""
+
 from __future__ import annotations
 
 import json
@@ -78,19 +79,27 @@ def generate_data_dictionary(
             }
         columns_info.append(info)
 
-    context = json.dumps({
-        "row_count": profile_json.get("row_count", 0),
-        "col_count": profile_json.get("col_count", 0),
-        "columns": columns_info,
-        "sample_rows": sample_rows[:5],
-    }, default=str)
+    context = json.dumps(
+        {
+            "row_count": profile_json.get("row_count", 0),
+            "col_count": profile_json.get("col_count", 0),
+            "columns": columns_info,
+            "sample_rows": sample_rows[:5],
+        },
+        default=str,
+    )
 
     try:
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=settings.DICTIONARY_MODEL,
             max_tokens=4096,
             system=_SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": f"Generate a data dictionary for this dataset:\n{context}"}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Generate a data dictionary for this dataset:\n{context}",
+                }
+            ],
         )
         text = response.content[0].text.strip()
 

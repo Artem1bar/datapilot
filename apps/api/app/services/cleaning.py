@@ -391,7 +391,8 @@ def generate_cleaning_plan(
         columns = list(sample_rows[0].keys())
 
     logger.info(
-        "Requesting cleaning plan from Claude (model=claude-opus-4-8, flagged_cols=%d)",
+        "Requesting cleaning plan from Claude (model=%s, flagged_cols=%d)",
+        settings.CLEANING_MODEL,
         len(data_quality),
     )
 
@@ -406,7 +407,7 @@ def generate_cleaning_plan(
     for attempt in range(1, max_attempts + 1):
         result = request_tool_call(
             client,
-            model="claude-opus-4-8",
+            model=settings.CLEANING_MODEL,
             max_tokens=16384,
             system=[
                 {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}

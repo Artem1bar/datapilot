@@ -91,7 +91,7 @@ def parse_manipulation_intent(
     )
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=settings.MANIPULATION_MODEL,
         max_tokens=4096,
         system=_SYSTEM_PROMPT,
         messages=[

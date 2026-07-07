@@ -101,7 +101,7 @@ def analyze_data(
     try:
         client = _get_client()
         response = client.messages.create(
-            model="claude-haiku-4-5-20251001",
+            model=settings.ANALYSIS_MODEL,
             max_tokens=4096,
             system=[
                 {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}},
@@ -112,7 +112,11 @@ def analyze_data(
         raw_text = response.content[0].text
     except Exception:
         logger.exception("Claude API call failed")
-        return {"answer": "Sorry, the analysis service is temporarily unavailable.", "charts": [], "tables": []}
+        return {
+            "answer": "Sorry, the analysis service is temporarily unavailable.",
+            "charts": [],
+            "tables": [],
+        }
 
     # Parse structured response
     parsed = _extract_json(raw_text)

@@ -235,7 +235,7 @@ def run_verification_agent(
     try:
         result = request_tool_call(
             client,
-            model="claude-sonnet-4-6",
+            model=settings.VERIFICATION_MODEL,
             # 8192 (up from 4096) so a plan with many remediation steps isn't
             # truncated mid-tool-call; still well under the streaming threshold.
             max_tokens=8192,

@@ -38,6 +38,14 @@ class Settings(BaseSettings):
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
 
+    # Anthropic model tiers, per pipeline stage. Defaults preserve the models
+    # each stage historically used; override any of them via env.
+    CLEANING_MODEL: str = "claude-opus-4-8"
+    VERIFICATION_MODEL: str = "claude-sonnet-4-6"
+    MANIPULATION_MODEL: str = "claude-sonnet-4-6"
+    ANALYSIS_MODEL: str = "claude-haiku-4-5-20251001"
+    DICTIONARY_MODEL: str = "claude-haiku-4-5-20251001"
+
     # CORS
     CORS_ORIGINS: str = "http://localhost:5174"
 
