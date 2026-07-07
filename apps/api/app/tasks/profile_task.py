@@ -454,6 +454,14 @@ def _compute_profile(df: pd.DataFrame) -> dict:
                     "q75": float(desc.get("75%", 0)),
                 }
             )
+            # Robust upper-tail stats so the cleaning model can derive caps from
+            # each column's own distribution instead of hardcoded dollar ceilings.
+            non_null = series.dropna()
+            if len(non_null) > 0:
+                col_median = float(non_null.median())
+                col_info["p95"] = round(float(non_null.quantile(0.95)), 4)
+                col_info["p99"] = round(float(non_null.quantile(0.99)), 4)
+                col_info["mad"] = round(float((non_null - col_median).abs().median()), 4)
         elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
             top_values = series.value_counts().head(10)
             col_info["top_values"] = {str(k): int(v) for k, v in top_values.items()}
