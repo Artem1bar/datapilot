@@ -7,13 +7,16 @@ import type { CleaningPlanPayload } from "@/types";
 
 interface Props {
   payload: CleaningPlanPayload;
+  messageId?: string;
   onAction?: (action: string, data?: unknown) => void;
 }
 
-export function CleaningPlanCard({ payload, onAction }: Props) {
+export function CleaningPlanCard({ payload, messageId, onAction }: Props) {
   const { summary, steps, datasetId } = payload;
   const [accepted, setAccepted] = useState<boolean[]>(() => steps.map(() => true));
-  const [applied, setApplied] = useState(false);
+  // Seed from the payload so an already-applied plan stays "Applied" after a
+  // remount (switching sessions away and back) instead of becoming re-applyable.
+  const [applied, setApplied] = useState(payload.applied ?? false);
 
   const acceptedCount = accepted.filter(Boolean).length;
 
@@ -29,7 +32,7 @@ export function CleaningPlanCard({ payload, onAction }: Props) {
       .filter((_, i) => accepted[i])
       .map(({ confidence: _confidence, rationale: _rationale, ...rest }) => rest);
     setApplied(true);
-    onAction?.("apply_cleaning", { datasetId, steps: selected });
+    onAction?.("apply_cleaning", { datasetId, steps: selected, messageId });
   };
 
   return (

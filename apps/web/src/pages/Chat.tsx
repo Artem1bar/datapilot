@@ -522,8 +522,21 @@ export default function Chat() {
       if (action === "apply_cleaning" && data) {
         const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
-        const { datasetId, steps } = data as { datasetId?: string; steps?: CleaningStep[] };
+        const { datasetId, steps, messageId } = data as {
+          datasetId?: string;
+          steps?: CleaningStep[];
+          messageId?: string;
+        };
         if (!datasetId || !steps?.length) return;
+        // Persist the applied state on the plan message so the card stays
+        // "Applied" across remounts instead of becoming re-applyable.
+        if (messageId) {
+          const store = useSessionStore.getState();
+          const msg = (store.messagesBySession[sessionId] ?? []).find((m) => m.id === messageId);
+          if (msg?.card?.type === "cleaning_plan") {
+            store.updateMessage(sessionId, messageId, { card: { ...msg.card, applied: true } });
+          }
+        }
         await applyCleaningSteps(sessionId, datasetId, steps);
       }
 

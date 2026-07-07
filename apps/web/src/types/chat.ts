@@ -54,6 +54,9 @@ export interface CleaningPlanPayload {
   readonly summary: string;
   readonly datasetId: string;
   readonly steps: ReadonlyArray<CleaningStep & { readonly confidence?: number; readonly rationale?: string }>;
+  /** Set once the plan has been applied, so the card stays "Applied" across
+   *  remounts (e.g. switching sessions away and back) instead of re-enabling. */
+  readonly applied?: boolean;
 }
 
 export interface CleaningProgressPayload {

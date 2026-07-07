@@ -13,19 +13,20 @@ import { HistoryCard } from "./HistoryCard";
 
 interface CardRendererProps {
   payload: CardPayload;
+  messageId?: string;
   onAction?: (action: string, data?: unknown) => void;
 }
 
 /**
  * Dispatches a CardPayload to the appropriate card component.
  */
-export function CardRenderer({ payload, onAction }: CardRendererProps) {
+export function CardRenderer({ payload, messageId, onAction }: CardRendererProps) {
   switch (payload.type) {
     case "inspection_summary":
       return <InspectionSummaryCard payload={payload} />;
 
     case "cleaning_plan":
-      return <CleaningPlanCard payload={payload} onAction={onAction} />;
+      return <CleaningPlanCard payload={payload} messageId={messageId} onAction={onAction} />;
 
     case "cleaning_progress":
       return <CleaningProgressCard payload={payload} />;

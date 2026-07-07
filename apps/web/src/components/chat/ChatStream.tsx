@@ -52,7 +52,7 @@ export function ChatStream({
             layout
           >
             {msg.card ? (
-              <CardRenderer payload={msg.card} onAction={handleCardAction} />
+              <CardRenderer payload={msg.card} messageId={msg.id} onAction={handleCardAction} />
             ) : (
               <MessageBubble message={msg} />
             )}
