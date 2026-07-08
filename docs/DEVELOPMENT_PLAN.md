@@ -41,6 +41,13 @@ All items below are committed with tests on branch `phase-2-product-quality` (**
 - ⬜ Remaining: real-services **integration suite** + Playwright **E2E** (need the compose stack), coverage ratchet as the suite grows.
 - End state: **455 backend + 88 frontend green, ruff/eslint/tsc clean, `pnpm build` clean (no chunk warning)**. 5 commits, TDD throughout.
 
+**Live end-to-end validation (2026-07-07 evening):** brought the full stack up locally via CLI (docker-compose infra + uvicorn API + Celery worker + Vite frontend, real Anthropic key) and drove every feature end-to-end.
+- ✅ Core pipeline (real AI): upload → profile → plan (Opus, 9 domain-agnostic steps incl. data-driven caps) → apply → verify (Sonnet, overall_passed) → download cleaned CSV. Confirmed the Phase 2A brain work on live data (no survey folklore, caps from the column's own distribution, dedup, whitespace/case/type fixes).
+- ✅ Analysis chat (reply + chart), export (presigned URL), recipes (save + apply; the plan's 422-on-bad-step validation confirmed working).
+- 🐛→✅ **Found and fixed two bugs the mocked unit tests couldn't catch** (committed `cdde291`): manipulation `_get_client` read `settings.anthropic_api_key` (500 on every parse); data_dictionary scraped JSON from free text (`JSONDecodeError`). Both now use the correct attr / forced tool use; regression tests added; re-verified live.
+- ✅ Frontend↔backend wired (Vite proxy → API): app loads (dev bypass), Cleaned-datasets list renders real data, and the **2C Settings/Cleaning surface loads from `/settings`** with all controls — resolves the "settings UI live QA pending" flag.
+- Stack torn down cleanly; the user's 41 pre-existing local dev datasets left untouched (only the session's `messy_sales.csv` test rows removed). Backend now **458 tests**.
+
 **Phase 6 — Launch (started):**
 - ✅ AI cost controls: kill-switch (`AI_ENABLED`) + per-user daily budget shared across all AI endpoints.
 - ✅ Privacy/data-handling note in README; test counts corrected.
