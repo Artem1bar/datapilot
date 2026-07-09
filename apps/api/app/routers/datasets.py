@@ -493,7 +493,10 @@ async def get_history(
         }
         if job.result_json:
             entry["summary"] = {
-                "rows_before": job.result_json.get("rows_before"),
+                # The clean task stores the pre-clean count as "original_rows".
+                "rows_before": job.result_json.get(
+                    "original_rows", job.result_json.get("rows_before")
+                ),
                 "rows_after": job.result_json.get("cleaned_rows"),
                 "cells_modified": job.result_json.get("cells_modified"),
             }
@@ -530,11 +533,15 @@ async def download_dataset(
             Job.status == "completed",
         )
         .order_by(Job.created_at.desc())
-        .limit(1)
     )
-    clean_job = jobs_result.scalar_one_or_none()
-    if clean_job and clean_job.result_json and clean_job.result_json.get("cleaned_r2_key"):
-        r2_key = clean_job.result_json["cleaned_r2_key"]
+    # Latest non-reverted clean job wins; a reverted clean falls back to the
+    # one before it (or the original upload if none remain).
+    for clean_job in jobs_result.scalars().all():
+        if not clean_job.result_json or clean_job.result_json.get("reverted"):
+            continue
+        if clean_job.result_json.get("cleaned_r2_key"):
+            r2_key = clean_job.result_json["cleaned_r2_key"]
+            break
 
     try:
         file_bytes = await asyncio.to_thread(download_file_bytes, r2_key)

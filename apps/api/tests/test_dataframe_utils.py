@@ -30,3 +30,28 @@ def test_to_sample_records_empty_dataframe_returns_empty_list():
 def test_to_sample_records_accepts_custom_marker():
     df = pd.DataFrame({"c": [None]})
     assert to_sample_records(df, null_marker="NULL")[0]["c"] == "NULL"
+
+
+class TestStripLegacyCsvLegend:
+    def test_strips_inband_trailer(self):
+        import io
+
+        import pandas as pd
+
+        from app.utils.dataframe import strip_legacy_csv_legend
+
+        data = (
+            b"a,b\n1,x\n2,y\n"
+            b"\n\n# Cleaning Legend\n"
+            b"row,column,original_value,new_value,operation,rule\n1,a, 1,1,strip,Rule\n"
+        )
+        cleaned = strip_legacy_csv_legend(data)
+        df = pd.read_csv(io.BytesIO(cleaned))
+        assert list(df.columns) == ["a", "b"]
+        assert len(df) == 2
+
+    def test_passthrough_without_trailer(self):
+        from app.utils.dataframe import strip_legacy_csv_legend
+
+        data = b"a,b\n1,x\n"
+        assert strip_legacy_csv_legend(data) == data

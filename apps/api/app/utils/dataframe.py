@@ -15,6 +15,18 @@ import pandas as pd
 NULL_SENTINEL = "<null>"
 
 
+# Cleaned CSVs written before 2026-07-09 carried the audit log appended
+# in-band after this marker, which breaks CSV parsers. New files no longer
+# include it, but files already in storage may.
+_LEGACY_LEGEND_MARKER = b"\n\n# Cleaning Legend\n"
+
+
+def strip_legacy_csv_legend(file_bytes: bytes) -> bytes:
+    """Drop the legacy in-band '# Cleaning Legend' trailer if present."""
+    idx = file_bytes.find(_LEGACY_LEGEND_MARKER)
+    return file_bytes[:idx] if idx != -1 else file_bytes
+
+
 def read_dataframe(file_bytes: bytes, filename: str) -> pd.DataFrame:
     """Read *file_bytes* into a DataFrame based on *filename*'s extension.
 

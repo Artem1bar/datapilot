@@ -128,22 +128,26 @@ def _dataframe_to_bytes(
         df.to_csv(buf, index=False, sep="\t")
         content_type = "text/tab-separated-values"
     else:
-        # Default to CSV — append audit log as a separate section
+        # Default to CSV. The audit log deliberately does NOT go into the
+        # file: an in-band "# Cleaning Legend" trailer makes the CSV
+        # unparseable by pandas/Excel (live QA 2026-07-09). The legend lives
+        # in the job's result_json and, for Excel output, a separate sheet.
         df.to_csv(buf, index=False)
-        if audit_log:
-            buf.write(b"\n\n# Cleaning Legend\n")
-            legend_df = pd.DataFrame(audit_log)
-            legend_df.to_csv(buf, index=False)
         content_type = "text/csv"
 
     buf.seek(0)
     return buf.read(), content_type
 
 
-def _make_cleaned_key(r2_key: str) -> str:
-    """Derive a cleaned file key by adding _cleaned before the extension."""
+def _make_cleaned_key(r2_key: str, job_id: str) -> str:
+    """Derive a per-job cleaned file key.
+
+    The job id keeps every clean run's output as its own storage object —
+    re-cleaning a dataset must not overwrite the previous cleaned file, or
+    "revert to the previous version" would serve the wrong bytes.
+    """
     base, ext = os.path.splitext(r2_key)
-    return f"{base}_cleaned{ext}"
+    return f"{base}_cleaned_{job_id[:8]}{ext}"
 
 
 def _remediation_stalled(
@@ -462,7 +466,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         _publish_progress_sync(job_id, "running", 80, "Uploading cleaned file")
 
         # Serialize and upload cleaned file (with Cleaning Legend for Excel)
-        cleaned_key = _make_cleaned_key(r2_key)
+        cleaned_key = _make_cleaned_key(r2_key, job_id)
         output_bytes, content_type = _dataframe_to_bytes(df, filename, audit_log)
 
         client = get_s3_client()
