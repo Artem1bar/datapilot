@@ -6,6 +6,7 @@ import { ChatStream } from "@/components/chat/ChatStream";
 import { InputBar } from "@/components/chat/InputBar";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { api } from "@/lib/api";
+import sampleCsv from "@/assets/sample-sales.csv?raw";
 import { detectIntent, intentRequiresData } from "@/lib/intent";
 import { mapComparisonReport, type RawComparisonReport } from "@/lib/comparison";
 import { progressStageLabel } from "@/lib/progress";
@@ -964,6 +965,11 @@ export default function Chat() {
         sessionId={activeSessionId}
         sending={sending}
         onChipClick={handleChipClick}
+        onTrySample={() =>
+          void handleFileAttach(
+            new File([sampleCsv], "sample-sales.csv", { type: "text/csv" }),
+          )
+        }
         onCardAction={handleCardAction}
       />
 

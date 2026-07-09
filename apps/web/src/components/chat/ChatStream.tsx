@@ -15,6 +15,7 @@ interface ChatStreamProps {
   sessionId: string | null;
   sending?: boolean;
   onChipClick: (text: string) => void;
+  onTrySample?: () => void;
   onCardAction?: (action: string, data?: unknown, sessionId?: string) => void;
 }
 
@@ -23,6 +24,7 @@ export function ChatStream({
   sessionId,
   sending = false,
   onChipClick,
+  onTrySample,
   onCardAction,
 }: ChatStreamProps) {
   const endRef = useRef<HTMLDivElement>(null);
@@ -37,7 +39,7 @@ export function ChatStream({
     : undefined;
 
   if (messages.length === 0 && !sending) {
-    return <EmptyState onChipClick={onChipClick} />;
+    return <EmptyState onChipClick={onChipClick} onTrySample={onTrySample} />;
   }
 
   return (
