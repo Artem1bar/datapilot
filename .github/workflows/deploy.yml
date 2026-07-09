@@ -68,18 +68,45 @@ jobs:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
 
   deploy:
-    name: Deploy api + worker
+    # Host decision (2026-07-09): Railway for api + worker, Cloudflare R2 for
+    # storage. Requires the RAILWAY_TOKEN repo secret (a project token) and
+    # two Railway services named "api" and "worker" — see docs/DEPLOYMENT.md.
+    # The worker service should start celery with -B so the beat schedule
+    # (cleanup, export retention, stale-job reaper) runs.
+    name: Deploy api + worker (Railway)
     needs: migrate
     runs-on: ubuntu-latest
+    env:
+      RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
     steps:
       - uses: actions/checkout@v4
-      # Replace this step with your host's deploy action once chosen:
-      #   Railway: `railway up` (or the CLI action) with RAILWAY_TOKEN
-      #   Fly.io:  superfly/flyctl-actions/setup-flyctl + `flyctl deploy` with FLY_API_TOKEN
-      # Redeploy BOTH the api (uvicorn) and worker (celery) services from the
-      # image pushed above: ghcr.io/${{ github.repository }}/api:latest
-      - name: Deploy (configure your host)
+
+      - name: Check deploy credentials
+        id: creds
         run: |
-          echo "TODO: configure the deploy step for your chosen host (Railway/Fly)."
-          echo "Image: ghcr.io/${{ github.repository }}/api:latest"
-          echo "Rollback: redeploy the previous image tag (type=sha) from GHCR."
+          if [ -z "$RAILWAY_TOKEN" ]; then
+            echo "RAILWAY_TOKEN secret is not set — skipping deploy." >> "$GITHUB_STEP_SUMMARY"
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install Railway CLI
+        if: steps.creds.outputs.configured == 'true'
+        run: npm install -g @railway/cli
+
+      - name: Deploy api service
+        if: steps.creds.outputs.configured == 'true'
+        working-directory: apps/api
+        run: railway up --service api --ci
+
+      - name: Deploy worker service
+        if: steps.creds.outputs.configured == 'true'
+        working-directory: apps/api
+        run: railway up --service worker --ci
+
+      - name: Rollback hint
+        if: steps.creds.outputs.configured == 'true'
+        run: |
+          echo "Rollback: 'railway redeploy' a previous deployment from the Railway dashboard," \
+               "or redeploy a previous GHCR tag: ghcr.io/${{ github.repository }}/api" >> "$GITHUB_STEP_SUMMARY"
