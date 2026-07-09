@@ -76,6 +76,36 @@ Re-ran the suites and a two-track code audit against this plan. **Verified: 458 
 
 **Decisions taken 2026-07-09 (Artem):** merge PR #1 now; backend host → **Railway** (+ Cloudflare R2 for storage); recipes → **ship the thin UI** (save-as-recipe on results card + picker); launch scope → **private beta** (invite-only via Clerk; no landing page needed, current AI budgets fine, simple retention). All four "Decisions needed" items below are now resolved.
 
+## Progress log — launch-readiness session 2026-07-09 (branch `launch-readiness`)
+
+Executed the sequenced remainder (B → C → most of D/E) against the live local stack. TDD throughout; every feature live-verified in the browser before commit.
+
+**(B) Live QA + trust UX + recipes — COMPLETE:**
+- ✅ **Plan-approval gate click-QA'd** (the Phase 1 gate's first interactive test): upload → plan card → per-step toggles (count + button update) → apply → locked "Applied" state → progress → validation (7/7) → results. Plan quality on live data confirmed (data-driven caps citing the column's own p99/median).
+- 🐛→✅ Live QA found and fixed **four real bugs** the mocked suite couldn't see: (1) trailing-slash dataset GETs 307-redirected out of the Vite proxy (breaks any path-preserving proxy); (2) `cast_type→datetime` made job persistence crash — `pd.Timestamp` in `result_json` (fixed engine-wide: pandas/numpy-aware `json_serializer` on both engines); (3) cleaned **CSVs embedded the audit legend in-band**, making them unparseable by pandas/Excel (legend now lives in result_json + the Excel sheet only; legacy files stripped on read); (4) raw SQL exceptions were shown verbatim in the UI error card (tasks now persist `user_facing_error()`).
+- ✅ **2B#4 re-attach**: dispatched clean jobs persist per session; on mount the UI reconnects, restores the stepper, and resumes the progress card. Live-verified by refreshing mid-job with the worker paused.
+- ✅ **2B#5 revert**: `POST /cleaning/{job_id}/revert` + "Revert to original" on the results card; download/export substitution skips reverted jobs. Cleaned files now get **per-job storage keys** — re-cleaning previously overwrote the old cleaned file, so version fallback could serve wrong bytes.
+- ✅ **2B#6 before/after**: `GET /cleaning/{job_id}/comparison` (original file vs the job's output via the existing comparison service) + "See what changed" renders the previously-dead ComparisonCard. History summary `rows_before` key fixed (`original_rows`).
+- ✅ **Recipes thin UI**: "Save as recipe" (name dialog) on the results card + "Apply a recipe" picker (list/delete) in the + menu; apply reuses the shared job-watch flow. ky error hook renders the 422 compatibility issues readably.
+- ✅ Brand pass: DataTiger → DataPilot (hero, sidebar text wordmark, footer, page title); persist keys deliberately unchanged.
+- ✅ **Export correctness**: the export task re-derived the cleaned key by string convention and silently exported the ORIGINAL file when the guess missed; both download and export now go through `pick_effective_r2_key()`.
+
+**(C) Quality infrastructure — COMPLETE:**
+- ✅ **Real-services integration suite** (`apps/api/tests/integration/`, 13 tests): CRUD + ownership 404s + recipe 422 through the real app against real Postgres/Redis; one Celery task round-trip. Opt-in via `INTEGRATION_TESTS=1`; guarded so it can never touch a non-`_test` database. Wired into the existing CI backend job (DB renamed `datapilot_test`).
+- ✅ **Playwright E2E** (`e2e/`): golden path (upload → plan → toggle → apply → validate → results → compare → save-recipe → apply-recipe → revert) + session-switch binding + refresh-mid-job re-attach. Full stack boots per run (fresh DB, Redis db 1, **stubbed Anthropic** via `ANTHROPIC_BASE_URL` → zero-dep node stub answering the forced tool call). New CI `e2e` job with Postgres/Redis/MinIO services.
+- ✅ **Stale-job reaper** (beat, 10 min): worker-crash-orphaned jobs → failed with a friendly message (found via a live worker SIGSEGV that stranded a job in `pending` forever).
+- ✅ **Data lifecycle**: cleaned files protected from the orphan purge (they live under `uploads/` — the daily cleanup would have deleted every cleaned file older than 24 h!); `exports/` retention (7 days, beat daily).
+
+**(D/E) Deploy + launch prep — code/docs done, provisioning blocked on accounts:**
+- ✅ `deploy.yml`'s echo stub replaced with a real **Railway** deploy job (api + worker via `railway up`, skips gracefully until `RAILWAY_TOKEN` is set).
+- ✅ **docs/DEPLOYMENT.md**: step-by-step Railway/R2/Vercel/Clerk provisioning guide + launch checklist (incl. invite-only Clerk setup and the pending live sign-in QA).
+- ✅ Onboarding: **"Try with sample data"** on the empty state loads a bundled messy sales CSV.
+- ✅ README truth pass (test counts, new endpoints, E2E section).
+- ⬜ **Blocked on Artem** (accounts/credentials only): Railway project + services + secrets, R2 bucket, Clerk production instance (invite-only) + live sign-in QA, Vercel env vars, Sentry DSN (then add sentry-sdk). Everything is documented in docs/DEPLOYMENT.md.
+- Deferred (documented): superseded-cleaned-file retention; Sentry wiring until a DSN exists.
+
+End state: **517 backend (504 mocked + 13 integration) + 128 frontend + 3 E2E specs green**, ruff/eslint/tsc clean.
+
 ---
 
 ## What "complete and fully operational" means

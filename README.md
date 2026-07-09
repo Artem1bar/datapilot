@@ -118,9 +118,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**569 tests total** (458 backend + 111 frontend).
+**645 tests total** (504 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (458 tests) — run from `apps/api/`
+### Backend (517 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -160,10 +160,13 @@ uv run pytest
 | `test_export_sanitization.py` | CSV/Excel formula-injection sanitization on export |
 | `test_data_driven_caps.py` / `test_domain_detection.py` | Percentile-based caps and domain gating (survey/expense heuristics off by default) |
 | `test_ai_budget.py` / `test_ai_endpoint_rate_limits.py` | AI kill-switch, per-user daily budget, and rate limits on open AI endpoints |
-| `test_cleanup_task.py` | Daily orphaned-upload purge (data lifecycle) |
+| `test_cleanup_task.py` | Orphaned-upload purge, export retention, stale-job reaper (data lifecycle) |
+| `test_json_serialization.py` / `test_task_errors.py` | Pandas/numpy-safe JSONB serialization; user-facing job error messages |
+| `test_cleaning_revert_compare.py` / `test_dataset_versions.py` | Cleaning revert, before/after comparison, effective-file selection |
+| `tests/integration/` | Real Postgres/Redis round-trips (CRUD, ownership, Celery task) — `INTEGRATION_TESTS=1` |
 | `test_app_boot.py` | App wiring smoke test — routers mounted, middleware installed |
 
-### Frontend (111 tests) — run from `apps/web/`
+### Frontend (128 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
@@ -182,6 +185,17 @@ pnpm test              # or: pnpm test:coverage
 | `src/components/cards/ErrorCard.test.tsx` | Error card rendering + retry re-dispatch |
 | `src/components/chat/ChatStream.test.tsx` | Message stream rendering |
 | `src/components/settings/CleaningSettings.test.tsx` | Cleaning settings form wired to the `/settings` API |
+| `src/components/cards/CleaningResultsCard.test.tsx` | Results-card trust actions: compare, revert, save-as-recipe |
+| `src/lib/comparison.test.ts` | Comparison API → card payload mapping |
+
+### End-to-end (`e2e/`, Playwright)
+
+```bash
+pnpm --filter @datapilot/e2e exec playwright install chromium   # once
+pnpm --filter @datapilot/e2e test
+```
+
+Boots the full stack (dedicated Postgres DB, Redis db 1, stubbed Anthropic API) and drives the golden path — upload → plan → toggle → apply → validate → results → compare → recipe — plus session-switching and refresh-mid-job re-attach. Needs local Postgres/Redis/MinIO (the dev services).
 
 ## API Overview
 
@@ -197,6 +211,8 @@ pnpm test              # or: pnpm test:coverage
 | `POST /cleaning/{id}/apply` | Apply a cleaning plan (async job) |
 | `GET /cleaning/{id}/plan` | Retrieve the current cleaning plan |
 | `GET /cleaning/{job_id}/verification` | Get post-cleaning validation report |
+| `GET /cleaning/{job_id}/comparison` | Diff the original file against a clean job's output |
+| `POST /cleaning/{job_id}/revert` | Revert a cleaning (downloads use the previous version) |
 | `POST /manipulation/{id}/parse` | Preview a data manipulation operation |
 | `POST /manipulation/{id}/apply` | Apply a data manipulation operation |
 | `POST /manipulation/{id}/undo` | Undo the last manipulation |
