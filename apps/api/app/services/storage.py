@@ -99,3 +99,14 @@ def delete_object(key: str) -> None:
     """Delete an object from S3/MinIO/R2."""
     client = get_s3_client()
     client.delete_object(Bucket=settings.R2_BUCKET_NAME, Key=key)
+
+
+def list_object_keys(prefix: str = "") -> list[tuple[str, datetime]]:
+    """List (key, last_modified) for every object under *prefix* in the bucket."""
+    client = get_s3_client()
+    paginator = client.get_paginator("list_objects_v2")
+    keys: list[tuple[str, datetime]] = []
+    for page in paginator.paginate(Bucket=settings.R2_BUCKET_NAME, Prefix=prefix):
+        for obj in page.get("Contents", []):
+            keys.append((obj["Key"], obj["LastModified"]))
+    return keys

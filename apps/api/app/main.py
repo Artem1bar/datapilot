@@ -8,6 +8,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.logging_config import configure_logging
+from app.middleware import RequestContextMiddleware
 
 
 @asynccontextmanager
@@ -29,6 +31,8 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Build the FastAPI application with all routers and middleware."""
+    configure_logging(json_logs=settings.ENVIRONMENT != "development")
+
     app = FastAPI(
         title="DataPilot API",
         version="0.1.0",
@@ -42,6 +46,14 @@ def create_app() -> FastAPI:
             "Set CORS_ORIGINS to explicit origins (e.g. 'http://localhost:5174')."
         )
 
+    # Guard: never boot production with default/missing secrets.
+    secret_problems = settings.production_secret_problems()
+    if secret_problems:
+        raise RuntimeError(
+            "Refusing to start in production with insecure configuration:\n  - "
+            + "\n  - ".join(secret_problems)
+        )
+
     # CORS — explicit methods/headers instead of wildcards
     app.add_middleware(
         CORSMiddleware,
@@ -50,6 +62,9 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Accept"],
     )
+
+    # Outermost: per-request id + access logging (added last = wraps CORS).
+    app.add_middleware(RequestContextMiddleware)
 
     # --- Mount routers ---
     from app.routers.analysis import router as analysis_router
@@ -62,7 +77,7 @@ def create_app() -> FastAPI:
     from app.routers.jobs import router as jobs_router
     from app.routers.manipulation import router as manipulation_router
     from app.routers.recipes import router as recipes_router
-    from app.routers.ws import router as ws_router
+    from app.routers.settings import router as settings_router
 
     # Health check at root level
     app.include_router(health_router)
@@ -77,9 +92,7 @@ def create_app() -> FastAPI:
     app.include_router(manipulation_router, prefix="/api/v1/manipulation")
     app.include_router(exports_router, prefix="/api/v1/exports")
     app.include_router(dictionary_router, prefix="/api/v1/datasets")
-
-    # WebSocket routes (not versioned)
-    app.include_router(ws_router)
+    app.include_router(settings_router, prefix="/api/v1/settings")
 
     return app
 

@@ -1,4 +1,5 @@
 """Cleaning recipe endpoints — save, list, apply reusable cleaning templates."""
+
 from __future__ import annotations
 
 import json
@@ -47,7 +48,9 @@ async def save_recipe(
         )
         job = result.scalar_one_or_none()
         if job is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cleaning job not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Cleaning job not found"
+            )
         if job.input_json and "steps" in job.input_json:
             steps = job.input_json["steps"]
         elif job.result_json and "steps" in job.result_json:
@@ -106,7 +109,9 @@ async def get_recipe(
 ) -> CleaningRecipeResponse:
     """Get a single recipe."""
     result = await db.execute(
-        select(CleaningRecipe).where(CleaningRecipe.id == recipe_id, CleaningRecipe.user_id == user.id)
+        select(CleaningRecipe).where(
+            CleaningRecipe.id == recipe_id, CleaningRecipe.user_id == user.id
+        )
     )
     recipe = result.scalar_one_or_none()
     if recipe is None:
@@ -122,7 +127,9 @@ async def delete_recipe(
 ) -> None:
     """Delete a recipe."""
     result = await db.execute(
-        select(CleaningRecipe).where(CleaningRecipe.id == recipe_id, CleaningRecipe.user_id == user.id)
+        select(CleaningRecipe).where(
+            CleaningRecipe.id == recipe_id, CleaningRecipe.user_id == user.id
+        )
     )
     recipe = result.scalar_one_or_none()
     if recipe is None:
@@ -139,12 +146,16 @@ async def apply_recipe(
     db: DBSession,
 ) -> dict:
     """Apply a saved recipe to a dataset — creates a new cleaning job."""
-    from app.services.rate_limit import check_rate_limit
+    from app.services.rate_limit import check_rate_limit, enforce_ai_budget
+
+    await enforce_ai_budget(str(user.id))
     await check_rate_limit(str(user.id), action="recipe_apply", max_calls=30, window_seconds=3600)
 
     # Get recipe
     result = await db.execute(
-        select(CleaningRecipe).where(CleaningRecipe.id == recipe_id, CleaningRecipe.user_id == user.id)
+        select(CleaningRecipe).where(
+            CleaningRecipe.id == recipe_id, CleaningRecipe.user_id == user.id
+        )
     )
     recipe = result.scalar_one_or_none()
     if recipe is None:
@@ -161,6 +172,30 @@ async def apply_recipe(
     steps = recipe.steps_json.get("steps", [])
     if not steps:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Recipe has no steps")
+
+    # Validate the recipe against THIS dataset's schema before dispatching, so a
+    # recipe saved on a different schema fails fast (naming the offending column)
+    # instead of silently no-opping or erroring mid-run.
+    if dataset.status != "ready" or not dataset.profile_json:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Dataset must be profiled before applying a recipe. "
+            f"Current status: '{dataset.status}'",
+        )
+
+    from app.services.cleaning import supported_operations
+    from app.services.plan_validator import validate_plan
+
+    columns = list((dataset.profile_json.get("columns") or {}).keys())
+    issues = validate_plan(steps, supported_operations(), columns)
+    if issues:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "Recipe is not compatible with this dataset.",
+                "issues": [str(issue) for issue in issues],
+            },
+        )
 
     # Create a cleaning job
     job = Job(
@@ -179,6 +214,7 @@ async def apply_recipe(
     # Dispatch Celery task
     try:
         from app.tasks.cleaning_task import clean_dataset
+
         task = clean_dataset.delay(str(dataset.id), str(job.id), json.dumps(steps))
         job.celery_task_id = task.id
         await db.commit()

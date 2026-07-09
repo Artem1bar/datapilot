@@ -358,16 +358,17 @@ def generate_cleaning_plan(
         "  AGGREGATION: sum_composite_expenses\n"
         "  ANOMALY DETECTION:\n"
         "    flag_extreme_outliers — null out statistical outliers (MAD-based z-score)\n"
-        "    cap_extreme_values — null out values above a hard ceiling\n"
-        '      params: {"max_value": 50000} — USE THIS for obvious data entry errors\n'
+        "    cap_extreme_values — null out values far above the column's own distribution\n"
+        '      params: {"max_value": <derived from the column p99/max>} — for obvious data entry errors\n'
         "    flag_contextual_fraud — flag contextually suspicious values\n"
         "  OTHER: deduplicate, rename_column, remove_outliers\n\n"
         "IMPORTANT RULES:\n"
         "- For `drop_rows`, set column to null.\n"
         "- For numeric cleaning, always follow: free_to_zero → remove_currency_symbols → extract_number → cast_type.\n"
-        "- For EVERY expense/cost column, add a `cap_extreme_values` step with a reasonable max_value "
-        "(e.g. 50000 for hotel, 10000 for meals, 5000 for transport). This catches data entry errors like $1B.\n"
-        "- ALWAYS include `flag_extreme_outliers` for numeric expense columns AFTER cap_extreme_values.\n"
+        "- When a numeric column contains values far above its own distribution (compare against the "
+        "profile's p99/max/mad stats), add a `cap_extreme_values` step with max_value derived from those "
+        "stats. Do not cap columns whose highs are consistent with their spread.\n"
+        "- Add `flag_extreme_outliers` for numeric columns with a suspicious upper tail, after any cap step.\n"
         "- Number each step sequentially starting from 1 in the description field (e.g. 'Step 1: ...', 'Step 2: ...').\n"
         "- For each step, give a short `rationale` and a `confidence` from 0.0 to 1.0.\n"
         "Call submit_cleaning_plan with the plan — do not reply with anything else."
@@ -390,7 +391,8 @@ def generate_cleaning_plan(
         columns = list(sample_rows[0].keys())
 
     logger.info(
-        "Requesting cleaning plan from Claude (model=claude-opus-4-8, flagged_cols=%d)",
+        "Requesting cleaning plan from Claude (model=%s, flagged_cols=%d)",
+        settings.CLEANING_MODEL,
         len(data_quality),
     )
 
@@ -405,7 +407,7 @@ def generate_cleaning_plan(
     for attempt in range(1, max_attempts + 1):
         result = request_tool_call(
             client,
-            model="claude-opus-4-8",
+            model=settings.CLEANING_MODEL,
             max_tokens=16384,
             system=[
                 {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
@@ -655,7 +657,8 @@ def _cap_extreme_values(df: pd.DataFrame, column: str, params: dict, audit: list
     """Cap extreme values at a specified maximum, replacing with NaN.
 
     More direct than flag_extreme_outliers — specifically targets values above
-    a hard ceiling. Used for obvious data entry errors like $1B hotel costs.
+    a caller-supplied ceiling (derived from the column's own distribution, e.g.
+    near its p99), used for obvious data-entry errors far above that spread.
 
     Params:
         max_value: values above this are set to NaN (required)
@@ -933,7 +936,7 @@ def _sum_composite_expenses(
 ) -> pd.DataFrame:
     """Parse composite expense strings and replace with the summed total.
 
-    e.g. 'Hotel - $150, Gas $300, F&B $300' → 750
+    e.g. 'Item A - $150, Item B $300, Item C $300' → 750
     """
     if column not in df.columns:
         return df
@@ -1273,6 +1276,38 @@ _OPERATION_MAP: dict[str, Any] = {
     "rename_column": _rename_column,
     "remove_outliers": _remove_outliers,
 }
+
+
+def supported_operations() -> set[str]:
+    """Return the set of cleaning operation names the executor can run."""
+    return set(_OPERATION_MAP)
+
+
+# Operations the verification agent may emit as remediation steps — a deliberate
+# subset of _OPERATION_MAP. Remediation should re-clean and cap, not restructure
+# (rename_column, remove_outliers) or apply speculative transforms
+# (standardize_values, flag_contextual_fraud, convert_time_to_number).
+REMEDIATION_OPS: frozenset[str] = frozenset(
+    {
+        "clean_column_names",
+        "drop_empty_columns",
+        "drop_incomplete_responses",
+        "drop_rows",
+        "strip_whitespace",
+        "remove_currency_symbols",
+        "extract_number",
+        "convert_number_words",
+        "free_to_zero",
+        "remove_vague_entries",
+        "fill_null",
+        "drop_null",
+        "cast_type",
+        "sum_composite_expenses",
+        "flag_extreme_outliers",
+        "cap_extreme_values",
+        "deduplicate",
+    }
+)
 
 
 # ---------------------------------------------------------------------------

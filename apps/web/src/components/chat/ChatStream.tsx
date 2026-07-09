@@ -9,13 +9,18 @@ import type { ChatMessageV2 } from "@/types";
 
 interface ChatStreamProps {
   messages: readonly ChatMessageV2[];
+  /** The session these messages belong to. Bound into every card action so an
+   *  action dispatched after the user switches sessions still targets the
+   *  owning session rather than whichever session is active at click time. */
+  sessionId: string | null;
   sending?: boolean;
   onChipClick: (text: string) => void;
-  onCardAction?: (action: string, data?: unknown) => void;
+  onCardAction?: (action: string, data?: unknown, sessionId?: string) => void;
 }
 
 export function ChatStream({
   messages,
+  sessionId,
   sending = false,
   onChipClick,
   onCardAction,
@@ -25,6 +30,11 @@ export function ChatStream({
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, sending]);
+
+  const handleCardAction = onCardAction
+    ? (action: string, data?: unknown) =>
+        onCardAction(action, data, sessionId ?? undefined)
+    : undefined;
 
   if (messages.length === 0 && !sending) {
     return <EmptyState onChipClick={onChipClick} />;
@@ -42,7 +52,7 @@ export function ChatStream({
             layout
           >
             {msg.card ? (
-              <CardRenderer payload={msg.card} onAction={onCardAction} />
+              <CardRenderer payload={msg.card} messageId={msg.id} onAction={handleCardAction} />
             ) : (
               <MessageBubble message={msg} />
             )}

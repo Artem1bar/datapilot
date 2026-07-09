@@ -10,12 +10,17 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from sqlalchemy.pool import NullPool
 
 from alembic import context
+from app.config import settings
 from app.db.base import Base
 from app.models import ChatSession, CleaningRecipe, Dataset, Job, User  # noqa: F401
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# Prefer the app's env-driven DATABASE_URL over the ini default so migrations
+# always target the same database as the app (local, CI, and production).
+config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
 target_metadata = Base.metadata
 

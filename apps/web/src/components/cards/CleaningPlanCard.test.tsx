@@ -112,4 +112,20 @@ describe("CleaningPlanCard", () => {
 
     expect(screen.getByRole("button", { name: /^Apply 0 steps$/ })).toBeDisabled();
   });
+
+  it("renders as already Applied when the payload is marked applied (survives remount)", () => {
+    render(<CleaningPlanCard payload={{ ...makePayload(), applied: true }} />);
+    expect(screen.getByRole("button", { name: /Applied/ })).toBeDisabled();
+  });
+
+  it("includes the messageId in the apply payload so the store can persist applied state", async () => {
+    const user = userEvent.setup();
+    const onAction = vi.fn();
+    render(<CleaningPlanCard payload={makePayload()} messageId="msg-42" onAction={onAction} />);
+
+    await user.click(screen.getByRole("button", { name: /^Apply 2 steps$/ }));
+
+    const data = onAction.mock.calls[0][1] as { messageId?: string };
+    expect(data.messageId).toBe("msg-42");
+  });
 });

@@ -11,22 +11,17 @@ Even if no issues are auto-detected, carefully examine every column in the profi
 - Non-breaking spaces (\xa0) in column names
 - Completely empty columns (all null)
 - Incomplete survey responses (Progress < 100 with Finished = False)
-- Absurdly large values that are obvious data entry errors (e.g. $1,000,000,000 hotel cost)
+- Values far outside a column's own distribution (compare against its p99/max stats) that are obvious data entry errors
 Never return an empty steps array unless the data is genuinely pristine.
 
 ## CRITICAL: Act on Every Flagged Issue
 The user message will contain an "AUTO-DETECTED ISSUES" section. Every single issue listed there MUST result in at least one cleaning step. Do not skip flagged issues. Do not say the data is already clean if issues are listed.
 
-## CRITICAL: Cap Obvious Data Entry Errors
-For EVERY expense, cost, fare, or spending column, you MUST add a `cap_extreme_values` step with a reasonable `max_value` parameter. Use domain knowledge:
-- Hotel/accommodation: max_value = 50000 (nightly stays rarely exceed $50K)
-- Airfare: max_value = 25000
-- Restaurant/meals: max_value = 10000
-- Transport/parking: max_value = 5000
-- Shopping: max_value = 25000
-- Gambling: max_value = 100000
-- Other spending: max_value = 50000
-Values above these ceilings (like $1,000,000,000 or $9,000,000) are ALWAYS data entry errors and must be nulled.
+## Capping Data-Entry Errors — Derive Ceilings From the Data
+Each numeric column in the profile includes robust distribution stats: `q75`, `p95`, `p99`, `max`, and `mad` (median absolute deviation). Use these — never fixed dollar amounts or domain assumptions — to judge whether a value is a data-entry error:
+- A value is suspect when it sits far above the column's OWN distribution (e.g. orders of magnitude above `p99`, or many `mad`s above the median), not because it crosses some universal threshold.
+- When a `cap_extreme_values` step is warranted, set `max_value` from that column's stats (e.g. a ceiling at or just above `p99`), so the same column gets a different cap on different datasets.
+- Capping is a recommendation grounded in the supplied statistics, not a mandatory step. If a column's high values are consistent with its own spread, do NOT cap it.
 
 ## Step Ordering
 Always apply steps in this EXACT order:
@@ -41,7 +36,7 @@ Always apply steps in this EXACT order:
 8. `convert_number_words` — "One" → 1, "Two" → 2
 9. `convert_time_to_number` — "2 hours" → 2
 10. `cast_type` — convert to int or float after cleaning is done
-11. `cap_extreme_values` — null out obvious data entry errors above hard ceilings
+11. `cap_extreme_values` — null out values far above the column's own distribution (derive the ceiling from its p99/max)
 12. `flag_extreme_outliers` — flag statistically extreme values (after capping)
 13. `flag_contextual_fraud` — flag contextually suspicious spend ratios
 14. `deduplicate` — remove duplicate rows last
@@ -55,7 +50,7 @@ This makes the cleaning plan traceable during verification.
 - **For every column flagged with `has_embedded_text`**: Apply `extract_number` + `cast_type` (float).
 - **For every column flagged with `has_free_values`**: Apply `free_to_zero`.
 - **For every column flagged with `has_number_words`**: Apply `convert_number_words`.
-- **For every column flagged with `has_extreme_outliers`**: Apply BOTH `cap_extreme_values` (with appropriate max_value) AND `flag_extreme_outliers`.
+- **For every column flagged with `has_extreme_outliers`**: Apply `flag_extreme_outliers`, and add `cap_extreme_values` when the extreme values sit far above the column's `p99` (set `max_value` from its stats).
 - **For every column flagged with `has_vague_values`**: Apply `remove_vague_entries`.
 - **If `qualtrics_header_row` is flagged**: Add `drop_rows` with the correct index.
 - **If `_dirty_column_names` is flagged**: Add `clean_column_names` as the VERY FIRST step.
@@ -69,8 +64,8 @@ This makes the cleaning plan traceable during verification.
 - **Time values**: Convert "2 hours" → 2, "90 minutes" → 1.5.
 - **Free items**: "Free", "free (comp)", "Free (comp by team)" → 0.
 - **Vague entries**: Null out "N/a", "NA", "Not much", "Very little".
-- **Composite expenses**: Sum dollar amounts in cells like "Hotel - $150, Gas $300" → 450.
-- **Extreme outliers**: Values 15× beyond the IQR fence (e.g. 1,000,000,000 for a hotel cost) → null + flag. Be forgiving — only flag values that are clearly impossible or absurd, not normal high-end spend.
+- **Composite expenses**: Sum amounts in cells like "Item A - $150, Item B $300" → 450.
+- **Extreme outliers**: Values far beyond the column's IQR fence or `p99` → null + flag. Be forgiving — only flag values clearly impossible relative to the column's own distribution, not normal high-end values.
 
 ## IMPORTANT: Be Precise, Not Noisy
 Only create steps that fix ACTUAL issues in the data. Do NOT:

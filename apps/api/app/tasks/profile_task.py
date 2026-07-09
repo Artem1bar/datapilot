@@ -60,9 +60,62 @@ def _publish_progress_sync(job_id: str, status: str, progress: int, message: str
     publish_progress_sync(job_id, status, progress, message)
 
 
-def detect_quality_issues(df: pd.DataFrame) -> dict:
-    """Scan each column for common data-quality problems and return a flags dict."""
+# Column names characteristic of survey-platform exports (Qualtrics, etc.).
+# Their presence is what promotes a dataset to the "survey" domain, where
+# survey-specific quality heuristics apply.
+_SURVEY_MARKER_COLUMNS = frozenset(
+    {
+        "responseid",
+        "startdate",
+        "enddate",
+        "recordeddate",
+        "progress",
+        "finished",
+        "distributionchannel",
+        "userlanguage",
+        "recipientemail",
+        "recipientfirstname",
+        "recipientlastname",
+        "externalreference",
+        "externaldatareference",
+    }
+)
+
+
+def detect_domain(df: pd.DataFrame) -> str | None:
+    """Best-effort detection of a dataset's domain.
+
+    Returns ``"survey"`` when the data looks like a survey-platform export
+    (characteristic Qualtrics columns, or a metadata header row), otherwise
+    ``None`` for generic data. Survey/expense quality heuristics only run when a
+    domain is detected or explicitly set, so generic datasets are profiled
+    without those assumptions.
+    """
+    lower_cols = {str(c).strip().lower() for c in df.columns}
+    if len(lower_cols & _SURVEY_MARKER_COLUMNS) >= 2:
+        return "survey"
+    # A first data row full of long question-text strings is the other strong
+    # Qualtrics signal (question descriptions exported as a metadata row).
+    if len(df) > 0:
+        first = df.iloc[0]
+        long_str_count = sum(1 for v in first if isinstance(v, str) and len(v) > 40)
+        if long_str_count >= max(3, len(df.columns) * 0.25):
+            return "survey"
+    return None
+
+
+def detect_quality_issues(df: pd.DataFrame, domain: str | None = None) -> dict:
+    """Scan each column for common data-quality problems and return a flags dict.
+
+    *domain* gates domain-specific heuristics. When ``None`` it is auto-detected
+    via :func:`detect_domain`; survey/expense heuristics only run for the
+    ``"survey"`` domain so generic datasets are profiled without them.
+    """
     import re as _re
+
+    if domain is None:
+        domain = detect_domain(df)
+    is_survey = domain == "survey"
 
     number_words = {
         "zero",
@@ -140,7 +193,8 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
         }
 
     # ── Incomplete survey responses (Progress < 100 AND Finished != True) ──
-    if "Progress" in df.columns:
+    # Survey domain only — a coincidental "Progress" column elsewhere is not one.
+    if is_survey and "Progress" in df.columns:
         prog = pd.to_numeric(df["Progress"], errors="coerce")
         finished_col = None
         for c in ("Finished", "finished", "FINISHED"):
@@ -163,8 +217,9 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
                 ),
             }
 
-    # Qualtrics survey-export detection: first data row contains full question text
-    if len(df) > 0:
+    # Qualtrics survey-export detection: first data row contains full question
+    # text (survey domain only — generic data may legitimately have long text).
+    if is_survey and len(df) > 0:
         first = df.iloc[0]
         long_str_count = sum(1 for v in first if isinstance(v, str) and len(v) > 40)
         if long_str_count >= max(3, len(df.columns) * 0.25):
@@ -182,7 +237,10 @@ def detect_quality_issues(df: pd.DataFrame) -> dict:
             continue
         str_vals = series.astype(str)
         col_flags: dict = {}
-        is_numeric_col = _is_numeric_col(col)
+        # The expense-style column-name regex is survey folklore; only let it
+        # promote a column to numeric-cleaning under the survey domain. Generic
+        # datasets rely on actual numeric dtype instead.
+        is_numeric_col = _is_numeric_col(col) if is_survey else False
 
         # --- Only flag numeric-cleaning issues on columns that SHOULD be cleaned ---
         # Skip system/metadata columns even if they happen to be numeric dtype
@@ -396,6 +454,14 @@ def _compute_profile(df: pd.DataFrame) -> dict:
                     "q75": float(desc.get("75%", 0)),
                 }
             )
+            # Robust upper-tail stats so the cleaning model can derive caps from
+            # each column's own distribution instead of hardcoded dollar ceilings.
+            non_null = series.dropna()
+            if len(non_null) > 0:
+                col_median = float(non_null.median())
+                col_info["p95"] = round(float(non_null.quantile(0.95)), 4)
+                col_info["p99"] = round(float(non_null.quantile(0.99)), 4)
+                col_info["mad"] = round(float((non_null - col_median).abs().median()), 4)
         elif pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(series):
             top_values = series.value_counts().head(10)
             col_info["top_values"] = {str(k): int(v) for k, v in top_values.items()}

@@ -55,8 +55,11 @@ jobs:
       - name: ESLint
         run: pnpm lint:web
 
-      - name: TypeScript
-        run: cd apps/web && npx tsc --noEmit
+      # Full production build, not `tsc --noEmit`: the app tsconfig excludes
+      # config files (e.g. vite.config.ts), so only `tsc -b` inside the build
+      # catches type errors there — and it also verifies bundling.
+      - name: Typecheck and build
+        run: pnpm build:web
 
   test-frontend:
     name: Tests (Frontend)
@@ -79,18 +82,53 @@ jobs:
       - name: Install dependencies
         run: pnpm install
 
-      - name: Run frontend tests
-        run: pnpm test:web
+      - name: Run frontend tests with coverage
+        run: pnpm test:web:coverage
 
   test:
-    name: Tests (Backend 403)
+    name: Tests (Backend)
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: apps/api
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
+      REDIS_URL: redis://localhost:6379/0
+      ANTHROPIC_API_KEY: test-key
+      R2_ENDPOINT_URL: http://localhost:9000
+      R2_ACCESS_KEY_ID: test
+      R2_SECRET_ACCESS_KEY: test
+
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Full history so diff-cover can find the merge base with the PR target.
+          fetch-depth: 0
 
       - name: Install uv
         uses: astral-sh/setup-uv@v4
@@ -103,16 +141,20 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Run tests
-        run: uv run pytest tests/ -q --no-header
-        env:
-          DATABASE_URL: postgresql+asyncpg://test:test@localhost/test
-          REDIS_URL: redis://localhost:6379/0
-          ANTHROPIC_API_KEY: test-key
-          APP_ENV: test
-          R2_ENDPOINT_URL: http://localhost:9000
-          R2_ACCESS_KEY_ID: test
-          R2_SECRET_ACCESS_KEY: test
-          SUPABASE_URL: http://localhost:54321
-          SUPABASE_ANON_KEY: test-anon-key
-          SUPABASE_SERVICE_ROLE_KEY: test-service-key
+      - name: Apply migrations and check for drift
+        run: |
+          uv run alembic upgrade head
+          uv run alembic check
+
+      - name: Run tests with coverage
+        run: >-
+          uv run pytest tests/ -q --no-header
+          --cov=app --cov-report=xml --cov-report=term-missing
+          --cov-fail-under=65
+
+      - name: Enforce 80% coverage on changed lines
+        if: github.event_name == 'pull_request'
+        run: >-
+          git fetch --no-tags origin ${{ github.base_ref }} &&
+          uv run --with diff-cover diff-cover coverage.xml
+          --compare-branch=origin/${{ github.base_ref }} --fail-under=80

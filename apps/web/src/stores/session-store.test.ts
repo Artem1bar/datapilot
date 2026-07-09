@@ -6,7 +6,7 @@ beforeEach(() => {
     sessions: [],
     activeSessionId: null,
     messagesBySession: {},
-    workflowState: null,
+    workflowStateBySession: {},
   });
 });
 
@@ -155,25 +155,26 @@ describe("SessionStore — updateMessage", () => {
 /* ── Workflow ──────────────────────────────────────────────────────────── */
 
 describe("SessionStore — workflow", () => {
-  it("startWorkflow sets workflowState with all steps pending", () => {
-    useSessionStore.getState().startWorkflow("ds-1", "data.csv");
-    const wf = useSessionStore.getState().workflowState!;
-    expect(wf.datasetId).toBe("ds-1");
-    expect(wf.datasetFilename).toBe("data.csv");
-    expect(wf.steps.every((s) => s.status === "pending")).toBe(true);
+  const wf = (sessionId: string) =>
+    useSessionStore.getState().workflowStateBySession[sessionId];
+
+  it("startWorkflow sets a session's workflow with all steps pending", () => {
+    useSessionStore.getState().startWorkflow("s1", "ds-1", "data.csv");
+    expect(wf("s1").datasetId).toBe("ds-1");
+    expect(wf("s1").datasetFilename).toBe("data.csv");
+    expect(wf("s1").steps.every((s) => s.status === "pending")).toBe(true);
   });
 
   it("setWorkflowStep marks a step as active", () => {
-    useSessionStore.getState().startWorkflow("ds-1", "data.csv");
-    useSessionStore.getState().setWorkflowStep("plan", "active");
-    const steps = useSessionStore.getState().workflowState!.steps;
-    expect(steps.find((s) => s.id === "plan")?.status).toBe("active");
+    useSessionStore.getState().startWorkflow("s1", "ds-1", "data.csv");
+    useSessionStore.getState().setWorkflowStep("s1", "plan", "active");
+    expect(wf("s1").steps.find((s) => s.id === "plan")?.status).toBe("active");
   });
 
   it("setWorkflowStep marks prior steps as complete when advancing", () => {
-    useSessionStore.getState().startWorkflow("ds-1", "data.csv");
-    useSessionStore.getState().setWorkflowStep("clean", "active");
-    const steps = useSessionStore.getState().workflowState!.steps;
+    useSessionStore.getState().startWorkflow("s1", "ds-1", "data.csv");
+    useSessionStore.getState().setWorkflowStep("s1", "clean", "active");
+    const steps = wf("s1").steps;
     expect(steps.find((s) => s.id === "inspect")?.status).toBe("complete");
     expect(steps.find((s) => s.id === "plan")?.status).toBe("complete");
     expect(steps.find((s) => s.id === "clean")?.status).toBe("active");
@@ -181,23 +182,44 @@ describe("SessionStore — workflow", () => {
   });
 
   it("setWorkflowStep marks a step as error", () => {
-    useSessionStore.getState().startWorkflow("ds-1", "data.csv");
-    useSessionStore.getState().setWorkflowStep("inspect", "error");
-    const steps = useSessionStore.getState().workflowState!.steps;
-    expect(steps.find((s) => s.id === "inspect")?.status).toBe("error");
+    useSessionStore.getState().startWorkflow("s1", "ds-1", "data.csv");
+    useSessionStore.getState().setWorkflowStep("s1", "inspect", "error");
+    expect(wf("s1").steps.find((s) => s.id === "inspect")?.status).toBe("error");
   });
 
-  it("setWorkflowStep is a no-op when workflowState is null", () => {
+  it("setWorkflowStep is a no-op when the session has no workflow", () => {
     expect(() => {
-      useSessionStore.getState().setWorkflowStep("inspect", "active");
+      useSessionStore.getState().setWorkflowStep("s1", "inspect", "active");
     }).not.toThrow();
-    expect(useSessionStore.getState().workflowState).toBeNull();
+    expect(wf("s1")).toBeUndefined();
   });
 
-  it("clearWorkflow resets workflowState to null", () => {
-    useSessionStore.getState().startWorkflow("ds-1", "data.csv");
-    useSessionStore.getState().clearWorkflow();
-    expect(useSessionStore.getState().workflowState).toBeNull();
+  it("clearWorkflow removes only that session's workflow", () => {
+    useSessionStore.getState().startWorkflow("s1", "ds-1", "data.csv");
+    useSessionStore.getState().clearWorkflow("s1");
+    expect(wf("s1")).toBeUndefined();
+  });
+
+  it("keeps each session's workflow independent (no cross-clobbering)", () => {
+    useSessionStore.getState().startWorkflow("s1", "ds-1", "a.csv");
+    useSessionStore.getState().startWorkflow("s2", "ds-2", "b.csv");
+    useSessionStore.getState().setWorkflowStep("s2", "clean", "active");
+
+    // s2 advanced; s1 must be untouched.
+    expect(wf("s1").steps.every((s) => s.status === "pending")).toBe(true);
+    expect(wf("s2").steps.find((s) => s.id === "clean")?.status).toBe("active");
+
+    // Clearing s2 leaves s1 intact.
+    useSessionStore.getState().clearWorkflow("s2");
+    expect(wf("s2")).toBeUndefined();
+    expect(wf("s1").datasetId).toBe("ds-1");
+  });
+
+  it("deleteSession discards that session's workflow state", () => {
+    const id = useSessionStore.getState().createSession();
+    useSessionStore.getState().startWorkflow(id, "ds-1", "data.csv");
+    useSessionStore.getState().deleteSession(id);
+    expect(useSessionStore.getState().workflowStateBySession[id]).toBeUndefined();
   });
 });
 

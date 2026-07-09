@@ -21,7 +21,7 @@ Go through the cleaned sample rows CELL BY CELL for numeric/expense columns. Loo
 - Number words ("one", "two", "five") still present
 - Vague entries ("n/a", "none", "unknown") still present in numeric columns
 - Mixed text/number values that should be pure numbers (e.g. "80" as a string)
-- **ABSURDLY LARGE VALUES**: Values that are clearly impossible (e.g. 1,000,000,000 or 9,000,000 in an expense column) are data entry errors and MUST be caught. Be forgiving of legitimate high-end spend — only flag values that are clearly absurd (orders of magnitude beyond any realistic spend).
+- **ABSURDLY LARGE VALUES**: Values orders of magnitude above the column's own distribution (its p99/max) are likely data-entry errors and should be caught. Be forgiving of legitimate high-end values — only flag those clearly inconsistent with the column's spread.
 - Incomplete survey responses (Progress < 100, Finished = False)
 - Non-breaking spaces in column names
 - Entirely empty columns that should have been dropped
@@ -48,29 +48,24 @@ Do the cleaned rows look reasonable? Are there unexpected nulls, zeros, or type 
 
 For EVERY CRITICAL or HIGH issue, you MUST produce a corresponding remediation step. If you find issues but provide no remediation_steps, the loop CANNOT fix them.
 
-Supported operations:
-  clean_column_names, drop_empty_columns, drop_incomplete_responses,
-  strip_whitespace, remove_currency_symbols, cast_type, fill_null, drop_null,
-  remove_vague_entries, free_to_zero, extract_number, convert_number_words,
-  sum_composite_expenses, flag_extreme_outliers, cap_extreme_values,
-  deduplicate, drop_rows
+Supported operations: use ONLY the operations listed under "remediation_steps may
+ONLY use these operations" in the user message. Any operation outside that allowed
+list will be dropped before execution.
 
 Each remediation step format:
   {"operation": "<op>", "column": "<col_name or null>", "params": {}, "description": "Step N: <why>"}
 
 ### cap_extreme_values
-Use `cap_extreme_values` with `params: {"max_value": <number>}` to null out obvious data entry errors. Examples:
-- Hotel expense of 1,000,000,000 → cap_extreme_values with max_value: 50000
-- Gambling of 9,000,000 → cap_extreme_values with max_value: 100000
+Use `cap_extreme_values` with `params: {"max_value": <number>}` to null out values far above a column's own distribution. Derive `max_value` from that column's stats (e.g. at or just above its `p99`), never a fixed amount. Example: a column whose values cluster near 200 but contains a lone 1,000,000,000 entry → cap near its p99, well below the outlier.
 
 ### cast_type
 Use `cast_type` with `params: {"target_type": "float"}` for columns that should be numeric but contain string values.
 
-## CRITICAL: You Must NOT Pass Bad Data
-If you see values like 1000000000.0 (one billion) in a hotel expense column, or 9000000.0 in gambling, you MUST set `passed: false` and include remediation steps. These are NEVER legitimate values for survey expense data.
+## Do NOT Pass Obvious Data-Entry Errors
+If a numeric column contains values orders of magnitude above its own distribution (e.g. a lone 1,000,000,000 among values near 200), set `passed: false` and include remediation steps. Judge against the column's own p99/max — not a fixed ceiling or a domain assumption.
 
 ## Step Number References
-When referencing cleaning steps in your issues, always use the step number: "Step 3 (flag_extreme_outliers on HotelExpense) failed to catch the $1B value."
+When referencing cleaning steps in your issues, always use the step number: "Step 3 (flag_extreme_outliers on Amount) failed to catch the value far above p99."
 
 ## Return Format
 Return ONLY valid JSON with this exact structure:
@@ -82,7 +77,7 @@ Return ONLY valid JSON with this exact structure:
   ],
   "recommendations": ["actionable suggestion 1", "..."],
   "remediation_steps": [
-    {"operation": "cap_extreme_values", "column": "HotelExpense", "params": {"max_value": 50000}, "description": "Step R1: Cap hotel expense at $50K — current max is $1B (data entry error)"}
+    {"operation": "cap_extreme_values", "column": "Amount", "params": {"max_value": 12000}, "description": "Step R1: Cap Amount near its p99 (~11800) — a lone 1,000,000,000 entry is a data-entry error"}
   ],
   "summary": "One-paragraph overall assessment referencing step numbers"
 }

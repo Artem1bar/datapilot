@@ -115,4 +115,5 @@ export type {
   DataDictionaryPayload,
   ComparisonPayload,
   HistoryPayload,
+  ErrorCardPayload,
 } from "./chat";

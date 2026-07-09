@@ -25,7 +25,7 @@ def _get_client() -> anthropic.Anthropic:
     """Return a lazily-initialized Anthropic client singleton."""
     global _anthropic_client
     if _anthropic_client is None:
-        _anthropic_client = anthropic.Anthropic(api_key=settings.anthropic_api_key or None)
+        _anthropic_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY or None)
     return _anthropic_client
 
 
@@ -91,7 +91,7 @@ def parse_manipulation_intent(
     )
 
     response = client.messages.create(
-        model="claude-sonnet-4-6",
+        model=settings.MANIPULATION_MODEL,
         max_tokens=4096,
         system=_SYSTEM_PROMPT,
         messages=[

@@ -18,7 +18,7 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 - **Data visualizations** — ask questions in chat and Claude returns charts (bar, line, pie, scatter) rendered live in a slide-out panel
 - **Cleaned dataset library** — all processed datasets are stored and can be re-downloaded at any time
 - **Export** — download cleaned files as CSV, Excel, or Parquet
-- **Real-time progress** — WebSocket-streamed job updates so you see cleaning progress live
+- **Live progress** — polled job updates so you see cleaning progress as it happens
 
 ## Architecture
 
@@ -37,21 +37,31 @@ apps/
         └── tasks/      # Background job workers
 
 packages/               # Shared TypeScript types
-supabase/               # Auth and DB migrations
 ```
 
 ## Tech Stack
 
 | Layer | Technology |
 |-------|-----------|
-| Frontend | React 18, Vite, TypeScript, Tailwind CSS, Framer Motion |
+| Frontend | React 19, Vite, TypeScript, Tailwind CSS, Framer Motion |
 | Backend | Python, FastAPI, SQLAlchemy (async), Alembic |
 | AI | Anthropic Claude — Opus 4.8 (cleaning plan), Sonnet 4.6 (manipulation, verification), Haiku 4.5 (analysis, dictionary) |
-| Auth | Supabase Auth / Clerk |
+| Auth | Clerk |
 | Storage | MinIO / Cloudflare R2 (file storage) |
 | Database | PostgreSQL |
 | Cache / Pub-Sub | Redis |
 | Deployment | Vercel (frontend), Docker Compose (backend) |
+
+## Privacy & data handling
+
+Uploaded files are processed by Anthropic's Claude API: a sample of rows and
+the column profile are sent to Claude to generate cleaning plans, run
+verification, answer analysis questions, and build data dictionaries. Data is
+not used to train models (see [Anthropic's data usage policy](https://www.anthropic.com/legal/commercial-terms)).
+
+Files are stored in your configured object storage (MinIO/R2) and deleting a
+dataset cascades to remove its stored objects; a daily job also purges orphaned
+uploads. Do not upload data you are not permitted to send to a third-party API.
 
 ## Local Development
 
@@ -74,7 +84,8 @@ docker-compose up -d
 
 # 3. Configure environment
 cp .env.example .env
-# Required: ANTHROPIC_API_KEY, SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY
+# Required: ANTHROPIC_API_KEY
+# For production auth: CLERK_JWT_ISSUER, CLERK_WEBHOOK_SECRET (and set DEV_AUTH_BYPASS=false)
 
 # 4. Install Python dependencies and run migrations
 cd apps/api
@@ -101,15 +112,15 @@ The app will be available at `http://localhost:5173`.
 | `R2_ENDPOINT_URL` | MinIO/R2 endpoint for file storage |
 | `R2_ACCESS_KEY_ID` | Storage access key |
 | `R2_SECRET_ACCESS_KEY` | Storage secret key |
-| `SUPABASE_URL` | Supabase project URL (auth) |
-| `SUPABASE_ANON_KEY` | Supabase anon key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service role key |
+| `CLERK_JWT_ISSUER` | Clerk Frontend API URL / JWT issuer (production auth) |
+| `CLERK_WEBHOOK_SECRET` | Svix signing secret for Clerk user-sync webhooks |
+| `DEV_AUTH_BYPASS` | `true` locally to skip auth; ignored in production |
 
 ## Tests
 
-**452 tests total** (403 backend + 49 frontend).
+**569 tests total** (458 backend + 111 frontend).
 
-### Backend (403 tests) — run from `apps/api/`
+### Backend (458 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -130,7 +141,6 @@ uv run pytest
 | `test_storage.py` | File storage (upload, download, delete) |
 | `test_comparison.py` | Dataset version comparison |
 | `test_jobs.py` | Job status polling |
-| `test_ws.py` | WebSocket real-time job progress stream |
 | `test_auth.py` | Clerk webhook authentication |
 | `test_multi_sheet.py` | Excel multi-sheet handling |
 | `test_file_validation.py` | Upload format and size validation |
@@ -143,20 +153,35 @@ uv run pytest
 | `test_datasets_router.py` | Dataset download/delete endpoints, JSON-safe previews |
 | `test_progress_reporting.py` / `test_task_db.py` | Per-stage job progress persistence, shared worker DB engine |
 | `test_structured_output.py` | Forced-tool-use helper: rate-limit retries, confidence coercion, error paths |
+| `test_auth_jwt.py` | Clerk session-JWT verification (JWKS/RS256, issuer + expiry, bypass rules) |
+| `test_ownership.py` | Cross-user isolation — user B requesting user A's resources gets 404 |
+| `test_settings.py` / `test_cleaning_plan_prefs.py` | User-preferences `/settings` API and prefs threaded into plan generation |
+| `test_upload_validation.py` | Upload size cap + magic-byte validation on the upload routes |
+| `test_export_sanitization.py` | CSV/Excel formula-injection sanitization on export |
+| `test_data_driven_caps.py` / `test_domain_detection.py` | Percentile-based caps and domain gating (survey/expense heuristics off by default) |
+| `test_ai_budget.py` / `test_ai_endpoint_rate_limits.py` | AI kill-switch, per-user daily budget, and rate limits on open AI endpoints |
+| `test_cleanup_task.py` | Daily orphaned-upload purge (data lifecycle) |
+| `test_app_boot.py` | App wiring smoke test — routers mounted, middleware installed |
 
-### Frontend (49 tests) — run from `apps/web/`
+### Frontend (111 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
-pnpm test
+pnpm test              # or: pnpm test:coverage
 ```
 
 | File | What it covers |
 |------|---------------|
 | `src/lib/utils.test.ts` | `cn()` Tailwind class-merge utility |
+| `src/lib/intent.test.ts` | Chat intent routing (clean/manipulate/analyze/report/chat) + precedence |
+| `src/lib/progress.test.ts` | Cleaning progress → stage-label thresholds |
+| `src/lib/upload.test.ts` | Client-side upload validation (size cap, accepted types) |
 | `src/stores/app-store.test.ts` | Sidebar, chart panel, chart list, and theme state |
 | `src/stores/session-store.test.ts` | Session CRUD, messages, workflow step transitions |
 | `src/components/cards/CleaningPlanCard.test.tsx` | Plan card rendering, step display, accept/reject actions |
+| `src/components/cards/ErrorCard.test.tsx` | Error card rendering + retry re-dispatch |
+| `src/components/chat/ChatStream.test.tsx` | Message stream rendering |
+| `src/components/settings/CleaningSettings.test.tsx` | Cleaning settings form wired to the `/settings` API |
 
 ## API Overview
 
@@ -179,7 +204,6 @@ pnpm test
 | `GET /exports/{job_id}/download` | Download the exported file |
 | `GET /datasets/{id}/dictionary` | Auto-generate AI data dictionary |
 | `GET /jobs/{id}` | Poll job status and results |
-| `WS /ws/jobs/{job_id}` | Real-time job progress stream |
 | `GET /recipes/` | List saved cleaning recipes |
 | `POST /recipes/` | Save a new cleaning recipe |
 | `GET /recipes/{id}` | Get a specific recipe |

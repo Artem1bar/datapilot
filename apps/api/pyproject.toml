@@ -35,8 +35,6 @@ dependencies = [
     "reportlab>=4.2.0",
     "matplotlib>=3.9.0",
     "python-pptx>=1.0.0",
-    # Sandbox
-    "RestrictedPython>=7.4",
     # Fuzzy matching
     "rapidfuzz>=3.10.0",
     # Data profiling
@@ -50,6 +48,7 @@ dependencies = [
 dev = [
     "pytest>=8.3.0",
     "pytest-asyncio>=0.24.0",
+    "pytest-cov>=6.0.0",
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
@@ -66,6 +65,19 @@ ignore = ["E501"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["app"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "\\.\\.\\.",
+]
 
 [tool.mypy]
 python_version = "3.12"
