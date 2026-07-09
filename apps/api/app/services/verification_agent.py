@@ -1,7 +1,7 @@
 """Claude-powered verification agent for post-cleaning quality assessment.
 
 Invoked only when the deterministic verification fails or audit completeness
-is low. Uses claude-sonnet-4-6 for thorough analysis.
+is low. Model is configured via settings.VERIFICATION_MODEL.
 """
 
 from __future__ import annotations
@@ -224,8 +224,9 @@ def run_verification_agent(
     )
 
     logger.info(
-        "Requesting verification from Claude (model=claude-sonnet-4-6, flags=%d, steps=%d, "
+        "Requesting verification from Claude (model=%s, flags=%d, steps=%d, "
         "sample_rows=%d, audit_entries=%d)",
+        settings.VERIFICATION_MODEL,
         len(original_quality_flags),
         len(steps_applied),
         len(trimmed_rows),

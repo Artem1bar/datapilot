@@ -118,9 +118,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**566 tests total** (455 backend + 111 frontend).
+**569 tests total** (458 backend + 111 frontend).
 
-### Backend (455 tests) — run from `apps/api/`
+### Backend (458 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
