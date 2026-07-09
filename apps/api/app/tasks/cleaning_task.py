@@ -20,6 +20,7 @@ from sqlalchemy.exc import NoResultFound
 
 from app.config import settings
 from app.services.storage import download_file_bytes, get_s3_client
+from app.tasks._errors import user_facing_error
 from app.tasks.celery_app import celery_app
 from app.utils.dataframe import read_dataframe
 
@@ -524,7 +525,8 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
             _publish_progress_sync(job_id, "running", 0, f"Transient error — retrying: {exc}")
             raise self.retry(exc=exc, countdown=30)
 
-        _publish_progress_sync(job_id, "failed", 0, str(exc))
+        error_message = user_facing_error(exc)
+        _publish_progress_sync(job_id, "failed", 0, error_message)
 
         with Session(engine) as session:
             session.execute(
@@ -532,7 +534,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                 .where(Job.id == uuid.UUID(job_id))
                 .values(
                     status="failed",
-                    error_text=str(exc),
+                    error_text=error_message,
                     completed_at=datetime.now(UTC),
                 )
             )
