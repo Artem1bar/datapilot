@@ -79,7 +79,7 @@ export function InputBar({
       </div>
 
       <p className="mt-1.5 text-center text-[11px] text-ink-muted">
-        Data Tiger uses Claude AI. Always verify important results.
+        DataPilot uses Claude AI. Always verify important results.
       </p>
     </div>
   );

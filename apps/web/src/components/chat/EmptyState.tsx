@@ -27,12 +27,12 @@ export function EmptyState({ onChipClick }: EmptyStateProps) {
           variants={scaleIn}
           className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-brand-50"
         >
-          <img src={tigerHeadSrc} alt="Data Tiger" className="h-12 w-12 object-contain" />
+          <img src={tigerHeadSrc} alt="DataPilot" className="h-12 w-12 object-contain" />
         </motion.div>
 
         <motion.h1 variants={staggerItem} className="text-xl font-semibold text-ink">
           Welcome to <span className="text-brand-600">Data</span>
-          <span className="text-gold-500">Tiger</span>
+          <span className="text-gold-500">Pilot</span>
         </motion.h1>
         <motion.p variants={staggerItem} className="mt-2 text-[13px] leading-relaxed text-ink-tertiary">
           Upload a dataset or ask a question to start cleaning, analyzing, or reporting on your data.

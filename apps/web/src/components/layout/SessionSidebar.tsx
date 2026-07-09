@@ -7,7 +7,7 @@ import {
   Settings,
 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
-import logoSrc from "@/assets/datatiger-logo.svg";
+import tigerHeadSrc from "@/assets/tiger-head.svg";
 import { useAppStore } from "@/stores/app-store";
 import { useSessionStore } from "@/stores/session-store";
 import { cn } from "@/lib/utils";
@@ -75,7 +75,11 @@ export function SessionSidebar() {
                 onClick={() => navigate("/app")}
                 className="flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity"
               >
-                <img src={logoSrc} alt="Data Tiger" className="h-8 w-auto object-contain max-w-[160px]" />
+                <img src={tigerHeadSrc} alt="" className="h-7 w-7 object-contain" />
+                <span className="truncate text-[15px] font-semibold">
+                  <span className="text-brand-600">Data</span>
+                  <span className="text-gold-500">Pilot</span>
+                </span>
               </motion.button>
             )}
           </AnimatePresence>

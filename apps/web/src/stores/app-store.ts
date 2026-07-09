@@ -42,6 +42,7 @@ export const useAppStore = create<AppState>()(
       setTheme: (theme) => set({ theme }),
     }),
     {
+      // Pre-rename localStorage key — changing it would drop users' local settings.
       name: "datatiger-app",
       // Don't persist charts — they're session-specific
       partialize: (state) => ({

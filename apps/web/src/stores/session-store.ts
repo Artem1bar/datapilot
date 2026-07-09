@@ -193,6 +193,7 @@ export const useSessionStore = create<SessionState>()(
         }),
     }),
     {
+      // Pre-rename localStorage key — changing it would drop users' local sessions.
       name: "datatiger-sessions",
       partialize: (state) => ({
         sessions: state.sessions,
