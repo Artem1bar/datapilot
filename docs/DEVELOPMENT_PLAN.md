@@ -55,7 +55,26 @@ All items below are committed with tests on branch `phase-2-product-quality` (**
 
 **Decisions I took** (from the plan's "Decisions needed"): auth provider → **Clerk** (Supabase deleted); file-size ceiling → **50 MB** (`MAX_UPLOAD_BYTES`, configurable). Still yours: **backend host** (Railway/Fly — `deploy.yml` is host-agnostic scaffolding) and **launch scope** (private beta vs public sign-ups).
 
-**Needs a live environment to finish/verify:** Clerk sign-in flow, the settings UI + remaining 2B UX (`/qa` on the running app), the Phase 5 integration suite + E2E (Playwright/real-services against the compose stack), and the actual deploy (host + secrets). _(Phase 5 conftest + coverage gates are now done — see the afternoon entry above.)_ One thing to sanity-check: the verification/manipulation model id `claude-sonnet-4-6` was preserved verbatim into config — confirm it's real.
+**Needs a live environment to finish/verify:** Clerk sign-in flow, the settings UI + remaining 2B UX (`/qa` on the running app), the Phase 5 integration suite + E2E (Playwright/real-services against the compose stack), and the actual deploy (host + secrets). _(Phase 5 conftest + coverage gates are now done — see the afternoon entry above.)_ One thing to sanity-check: the verification/manipulation model id `claude-sonnet-4-6` was preserved verbatim into config — confirm it's real. _(Resolved 2026-07-09 — see the audit entry below.)_
+
+## Audit — 2026-07-09 (full state re-verification)
+
+Re-ran the suites and a two-track code audit against this plan. **Verified: 458 backend + 111 frontend tests green, ruff clean, `pnpm build` clean (408 kB main chunk). PR #1 is open for this branch with all CI checks green and no merge conflicts** — main is 40 commits behind; merging is the next unblocking step.
+
+**Closed items:**
+- `claude-sonnet-4-6` **is a real, active model id** (verified against the current Anthropic model catalog; it also served every verification call in the 2026-07-07 live E2E). Sanity-check item closed. All three tiers in `config.py` (`claude-opus-4-8` / `claude-sonnet-4-6` / `claude-haiku-4-5-20251001`) are current. No service passes `temperature`/`top_p`/`top_k`, so a future swap to `claude-sonnet-5` (adaptive-thinking default, rejects non-default sampling params) is a config-only A/B — worth trying for verification+manipulation while intro pricing runs (through 2026-08-31); bump the verification `max_tokens` 8192→12288 for its ~30%-heavier tokenizer and gate on the 2A spot-check harness.
+
+**New findings this audit surfaced (not previously tracked):**
+- **Recipes have no frontend UI.** README sells "save a cleaning plan as a reusable template … in one click," and the backend `/recipes/*` endpoints are done and live-validated — but nothing in `apps/web` calls them. Ship a thin UI (save-as-recipe on the results card + a recipe picker) or de-advertise.
+- **Brand drift:** the empty-state hero says "Welcome to **DataTiger**" (`EmptyState.tsx`) and the persist key is `datatiger-sessions` (`session-store.ts`) while everything else says DataPilot. Fix the hero copy; renaming the persist key would drop users' local sessions, so keep it or add a migration.
+- **Dead cards:** `ComparisonCard` and `HistoryCard` are wired into `CardRenderer` but nothing ever produces their payloads — the backend `compare`/`history` endpoints are never called. The 2B "before/after" item is therefore mostly *wiring*, not new construction.
+- **Cleanup task scope is uploads-only** (`uploads/` prefix, 24 h age-guard): cleaned files, snapshots, and exports have no retention/TTL story yet — fold into launch scope decision.
+- **`deploy.yml`'s deploy job is an echo stub** (build→GHCR and migrate jobs are real); it stays `workflow_dispatch`-only until the host is chosen.
+- Confirmed still absent (as planned): job re-attach after refresh (workflow state deliberately unpersisted, no mount-time poll), cleaning undo (manipulation undo exists — distinct), Playwright/E2E and real-service integration tests (suite is all-mocked; CI's real Postgres is only exercised by the migration step), Sentry.
+
+**Remaining work, sequenced:** (A) merge PR #1 → (B) live-QA round: plan-gate click-through, Clerk sign-in, then build re-attach/undo/before-after + recipes UI against the running app → (C) Playwright golden path + real-services integration suite → (D) wire deploy to Railway, Vercel/Clerk/R2 env, Sentry → (E) launch: demo dataset, docs pass, retention policy, checklist. ~1.5–2.5 weeks at current pace.
+
+**Decisions taken 2026-07-09 (Artem):** merge PR #1 now; backend host → **Railway** (+ Cloudflare R2 for storage); recipes → **ship the thin UI** (save-as-recipe on results card + picker); launch scope → **private beta** (invite-only via Clerk; no landing page needed, current AI budgets fine, simple retention). All four "Decisions needed" items below are now resolved.
 
 ---
 
@@ -76,19 +95,20 @@ The software is done when every box below is checked. Everything in this plan tr
 
 ---
 
-## Current state at a glance
+## Current state at a glance (updated 2026-07-09; original 2026-07-07 table superseded)
 
-| Area | State | Blocking gaps |
+| Area | State | Remaining gaps |
 |---|---|---|
-| Loop correctness (Phase 0–1) | ✅ Done, committed | — |
-| Cleaning-brain quality | ⚠️ Works, overfit | Null masking, hardcoded caps, domain heuristics |
-| Frontend core flow | ⚠️ Works, 3 known bugs | Wrong-session card actions, no job re-attach |
-| Settings | ❌ Theme only | Whole settings surface missing |
-| Auth | ❌ Dev stub | No JWT verification anywhere |
-| Abuse hardening | ❌ Partial | 3 AI endpoints unlimited, upload unvalidated, formula injection |
-| Deployment | ❌ Frontend-only | No Dockerfile, no backend host, frontend↔backend link broken |
-| Observability | ❌ None | No structured logging, no error tracking |
-| Test infrastructure | ⚠️ Unit-only | No integration/E2E, no coverage gate, CI has no real services |
+| Loop correctness (Phase 0–1) | ✅ Done, live-validated | — |
+| Cleaning-brain quality (2A) | ✅ Done, live-validated | Optional: `claude-sonnet-5` A/B for verify/manipulation |
+| Frontend core flow (2B) | ⚠️ Correct, trust UX incomplete | Job re-attach, cleaning undo, before/after wiring, recipes UI, plan-gate click-QA |
+| Settings (2C) | ✅ Done, live-rendered | — |
+| Auth (Phase 3) | ✅ Clerk JWT, security-reviewed | Live sign-in QA with a real Clerk instance |
+| Abuse hardening | ✅ Done | — |
+| Deployment (Phase 4) | ⚠️ Code-ready, not deployed | Host decision, deploy.yml stub → real, Vercel/CORS/Clerk env; live site still a shell |
+| Observability | ⚠️ Logs only | Sentry (needs DSN), job-failure alerting |
+| Test infrastructure (Phase 5) | ⚠️ Strong unit layer + gates | Real-services integration suite, Playwright E2E |
+| Launch (Phase 6) | ⚠️ Started | Demo dataset, docs pass, retention policy, launch checklist, scope decision |
 
 ---
 
@@ -182,12 +202,12 @@ Week 1        Week 2        Week 3        Week 4
 - **E2E (5) lands before launch (6)** so the golden path is guarded during the auth/deploy churn.
 - Estimated total: **4–6 calendar weeks** at current pace.
 
-## Decisions needed (owner: Artem)
+## Decisions needed (owner: Artem) — ALL RESOLVED
 
-1. **Auth provider** — recommendation: Clerk (webhook, frontend dep, CSP already in place); delete Supabase remnants. Deciding this unblocks Phase 3.
-2. **Backend host** — recommendation: Railway (simplest Postgres+Redis+worker story) or Fly.io; R2 for storage. Deciding this unblocks Phase 4.
-3. **Launch scope** — private beta (auth-gated, invite-only) vs public sign-ups. Affects Phase 6 (landing page, cost controls sizing, retention policy).
-4. **File-size ceiling** — pick the supported max (e.g. 50 MB / ~1M rows) so upload caps, UI messaging, and perf targets all agree.
+1. **Auth provider** → **Clerk** (decided 2026-07-07; Supabase deleted).
+2. **Backend host** → **Railway** + Cloudflare R2 (decided 2026-07-09). Unblocks Phase 4.
+3. **Launch scope** → **private beta**, invite-only via Clerk (decided 2026-07-09).
+4. **File-size ceiling** → **50 MB** (`MAX_UPLOAD_BYTES`, configurable; decided 2026-07-07).
 
 ## How we build it — skill & agent playbook
 
