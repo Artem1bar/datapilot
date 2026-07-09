@@ -316,7 +316,7 @@ export default function Chat() {
 
     try {
       // Fetch dataset info
-      const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
+      const dataset = await api.get(`datasets/${datasetId}`).json<DatasetResponse>();
       startWorkflow(sessionId, datasetId, dataset.filename);
 
       // ── Step 1: Inspect ──────────────────────────────────────
@@ -401,7 +401,7 @@ export default function Chat() {
     setSending(true);
 
     try {
-      const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
+      const dataset = await api.get(`datasets/${datasetId}`).json<DatasetResponse>();
 
       // ── Step 3: Clean ────────────────────────────────────────
       setWorkflowStep(sessionId, "clean", "active");
@@ -726,7 +726,7 @@ export default function Chat() {
 async function pollDatasetReady(datasetId: string, maxAttempts = 30): Promise<DatasetResponse> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 2000));
-    const dataset = await api.get(`datasets/${datasetId}/`).json<DatasetResponse>();
+    const dataset = await api.get(`datasets/${datasetId}`).json<DatasetResponse>();
     if (dataset.status === "ready") return dataset;
     if (dataset.status === "error") throw new Error("Profiling failed");
   }
