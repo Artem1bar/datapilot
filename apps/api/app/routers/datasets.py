@@ -25,6 +25,7 @@ from app.schemas import (
     UploadUrlRequest,
     UploadUrlResponse,
 )
+from app.services.dataset_versions import pick_effective_r2_key
 from app.services.storage import (
     create_presigned_upload_url,
     delete_object,
@@ -523,7 +524,6 @@ async def download_dataset(
     if dataset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
 
-    r2_key = dataset.r2_key
     jobs_result = await db.execute(
         select(Job)
         .where(
@@ -534,14 +534,7 @@ async def download_dataset(
         )
         .order_by(Job.created_at.desc())
     )
-    # Latest non-reverted clean job wins; a reverted clean falls back to the
-    # one before it (or the original upload if none remain).
-    for clean_job in jobs_result.scalars().all():
-        if not clean_job.result_json or clean_job.result_json.get("reverted"):
-            continue
-        if clean_job.result_json.get("cleaned_r2_key"):
-            r2_key = clean_job.result_json["cleaned_r2_key"]
-            break
+    r2_key = pick_effective_r2_key(dataset.r2_key, jobs_result.scalars().all())
 
     try:
         file_bytes = await asyncio.to_thread(download_file_bytes, r2_key)
