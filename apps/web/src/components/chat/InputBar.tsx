@@ -13,6 +13,8 @@ interface InputBarProps {
   onFileAttach: (file: File) => void;
   onTablePaste: (text: string) => void;
   onChipClick: (text: string) => void;
+  onApplyRecipe?: (recipeId: string) => void;
+  hasDataset?: boolean;
   sending?: boolean;
   disabled?: boolean;
   showChips?: boolean;
@@ -25,6 +27,8 @@ export function InputBar({
   onFileAttach,
   onTablePaste,
   onChipClick,
+  onApplyRecipe,
+  hasDataset = false,
   sending = false,
   disabled = false,
   showChips = true,
@@ -53,6 +57,8 @@ export function InputBar({
         <AttachMenu
           onFileAttach={onFileAttach}
           onTablePaste={onTablePaste}
+          onApplyRecipe={onApplyRecipe}
+          hasDataset={hasDataset}
           disabled={disabled}
         />
 

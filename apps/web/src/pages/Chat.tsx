@@ -7,6 +7,7 @@ import { InputBar } from "@/components/chat/InputBar";
 import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { api } from "@/lib/api";
 import { detectIntent, intentRequiresData } from "@/lib/intent";
+import { mapComparisonReport, type RawComparisonReport } from "@/lib/comparison";
 import { progressStageLabel } from "@/lib/progress";
 import { validateUploadFile } from "@/lib/upload";
 import type {
@@ -46,6 +47,9 @@ export default function Chat() {
   const messages = rawMessages ?? EMPTY_MESSAGES;
   const workflowState = useSessionStore((s) =>
     s.activeSessionId ? s.workflowStateBySession[s.activeSessionId] : undefined,
+  );
+  const hasDataset = useSessionStore(
+    (s) => !!s.sessions.find((sess) => sess.id === s.activeSessionId)?.datasetId,
   );
   const addMessage = useSessionStore((s) => s.addMessage);
   const createSession = useSessionStore((s) => s.createSession);
@@ -486,6 +490,78 @@ export default function Chat() {
     }
   }
 
+  // Applies a saved recipe to the active session's dataset. The backend
+  // validates the steps against the dataset's columns (422 with the issues
+  // named), dispatches a clean job, and the shared watcher takes over.
+  async function applyRecipe(recipeId: string) {
+    const sessionId = activeSessionId;
+    if (!sessionId) return;
+    const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
+    const datasetId = session?.datasetId;
+    if (!datasetId) return;
+
+    setSending(true);
+    try {
+      const [dataset, recipe] = await Promise.all([
+        api.get(`datasets/${datasetId}`).json<DatasetResponse>(),
+        api.get(`recipes/${recipeId}`).json<{
+          name: string;
+          steps_json: { steps?: CleaningStep[] };
+        }>(),
+      ]);
+
+      startWorkflow(sessionId, datasetId, dataset.filename);
+      setWorkflowStep(sessionId, "clean", "active");
+
+      const progressMsgId = generateId();
+      addMessage(sessionId, {
+        id: progressMsgId,
+        role: "assistant",
+        content: "",
+        card: {
+          type: "cleaning_progress",
+          progress: 0,
+          status: "running",
+          message: `Applying recipe "${recipe.name}"...`,
+        },
+        timestamp: new Date().toISOString(),
+      });
+
+      const resp = await api
+        .post(`recipes/${recipeId}/apply`, {
+          json: { dataset_id: datasetId },
+          timeout: 60_000,
+        })
+        .json<{ job_id: string; recipe_name: string; step_count: number }>();
+
+      const activeJob: ActiveCleaningJob = {
+        jobId: resp.job_id,
+        datasetId,
+        datasetFilename: dataset.filename,
+        progressMessageId: progressMsgId,
+        rowsBefore: dataset.row_count ?? 0,
+        steps: recipe.steps_json.steps ?? [],
+        startedAt: new Date().toISOString(),
+      };
+      useSessionStore.getState().registerCleaningJob(sessionId, activeJob);
+
+      await watchCleaningJob(sessionId, activeJob);
+    } catch (err) {
+      addMessage(
+        sessionId,
+        createMessage("assistant", "", {
+          type: "error",
+          title: "Couldn't apply the recipe",
+          message: err instanceof Error ? err.message : "Unknown error",
+          retry: { action: "apply_recipe", data: { recipeId }, label: "Try again" },
+        }),
+      );
+      clearWorkflow(sessionId);
+    } finally {
+      setSending(false);
+    }
+  }
+
   // Watches a dispatched clean job to a terminal state: drives the progress
   // card, then adds the validation + results cards. Shared by the apply flow
   // and the mount-time re-attach after a refresh. Never throws.
@@ -648,6 +724,105 @@ export default function Chat() {
         await runCleaningWorkflow(sessionId, datasetId);
       }
 
+      if (action === "compare_cleaning" && data) {
+        const sessionId = ownerSessionId ?? activeSessionId;
+        if (!sessionId) return;
+        const { jobId } = data as { jobId?: string };
+        if (!jobId) return;
+
+        setSending(true);
+        addMessage(sessionId, createMessage("system", "Comparing before and after..."));
+        try {
+          const raw = await api
+            .get(`cleaning/${jobId}/comparison`, { timeout: 60_000 })
+            .json<RawComparisonReport>();
+          addMessage(sessionId, createMessage("assistant", "", mapComparisonReport(raw)));
+        } catch (err) {
+          addMessage(
+            sessionId,
+            createMessage("assistant", "", {
+              type: "error",
+              title: "Couldn't build the comparison",
+              message: err instanceof Error ? err.message : "Unknown error",
+              retry: { action: "compare_cleaning", data, label: "Try again" },
+            }),
+          );
+        } finally {
+          setSending(false);
+        }
+      }
+
+      if (action === "revert_cleaning" && data) {
+        const sessionId = ownerSessionId ?? activeSessionId;
+        if (!sessionId) return;
+        const { jobId, messageId } = data as { jobId?: string; messageId?: string };
+        if (!jobId) return;
+
+        setSending(true);
+        try {
+          const resp = await api
+            .post(`cleaning/${jobId}/revert`, { timeout: 30_000 })
+            .json<{ message: string }>();
+          // Mark the results card reverted so the button doesn't reappear.
+          if (messageId) {
+            const store = useSessionStore.getState();
+            const msg = (store.messagesBySession[sessionId] ?? []).find((m) => m.id === messageId);
+            if (msg?.card?.type === "cleaning_results") {
+              store.updateMessage(sessionId, messageId, { card: { ...msg.card, reverted: true } });
+            }
+          }
+          addMessage(sessionId, createMessage("system", resp.message));
+        } catch (err) {
+          addMessage(
+            sessionId,
+            createMessage("system", `Revert failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+          );
+        } finally {
+          setSending(false);
+        }
+      }
+
+      if (action === "save_recipe" && data) {
+        const sessionId = ownerSessionId ?? activeSessionId;
+        if (!sessionId) return;
+        const { jobId, name, messageId } = data as {
+          jobId?: string;
+          name?: string;
+          messageId?: string;
+        };
+        if (!jobId || !name) return;
+
+        setSending(true);
+        try {
+          const recipe = await api
+            .post("recipes/", { json: { name, job_id: jobId }, timeout: 30_000 })
+            .json<{ id: string; name: string }>();
+          if (messageId) {
+            const store = useSessionStore.getState();
+            const msg = (store.messagesBySession[sessionId] ?? []).find((m) => m.id === messageId);
+            if (msg?.card?.type === "cleaning_results") {
+              store.updateMessage(sessionId, messageId, {
+                card: { ...msg.card, savedRecipeName: recipe.name },
+              });
+            }
+          }
+          addMessage(
+            sessionId,
+            createMessage(
+              "system",
+              `Recipe **${recipe.name}** saved — apply it to any dataset from the **+** menu.`,
+            ),
+          );
+        } catch (err) {
+          addMessage(
+            sessionId,
+            createMessage("system", `Couldn't save the recipe: ${err instanceof Error ? err.message : "Unknown error"}`),
+          );
+        } finally {
+          setSending(false);
+        }
+      }
+
       if (action === "apply_manipulation" && data) {
         const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
@@ -705,6 +880,11 @@ export default function Chat() {
         } finally {
           setSending(false);
         }
+      }
+
+      if (action === "apply_recipe" && data) {
+        const { recipeId } = data as { recipeId?: string };
+        if (recipeId) await applyRecipe(recipeId);
       }
 
       if (action === "cancel_manipulation") {
@@ -795,6 +975,8 @@ export default function Chat() {
         onFileAttach={(file) => void handleFileAttach(file)}
         onTablePaste={handleTablePaste}
         onChipClick={handleChipClick}
+        onApplyRecipe={(recipeId) => void applyRecipe(recipeId)}
+        hasDataset={hasDataset}
         sending={sending}
         showChips={messages.length === 0}
       />

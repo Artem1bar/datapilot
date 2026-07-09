@@ -36,7 +36,7 @@ export function CardRenderer({ payload, messageId, onAction }: CardRendererProps
       return <ValidationSummaryCard payload={payload} />;
 
     case "cleaning_results":
-      return <CleaningResultsCard payload={payload} onAction={onAction} />;
+      return <CleaningResultsCard payload={payload} messageId={messageId} onAction={onAction} />;
 
     case "manipulation_preview":
       return <ManipulationPreviewCard payload={payload} onAction={onAction} />;

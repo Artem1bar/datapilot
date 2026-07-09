@@ -43,9 +43,17 @@ export const api = ky.create({
           return error;
         }
         try {
-          const body = await response.clone().json() as { detail?: string };
-          if (body?.detail) {
+          const body = (await response.clone().json()) as {
+            detail?: string | { message?: string; issues?: string[] };
+          };
+          if (typeof body?.detail === "string") {
             error.message = body.detail;
+          } else if (body?.detail?.message) {
+            // Structured errors (e.g. recipe compatibility) carry an issue list.
+            const issues = body.detail.issues?.length
+              ? ` ${body.detail.issues.join("; ")}`
+              : "";
+            error.message = `${body.detail.message}${issues}`;
           }
         } catch {
           // ignore parse errors — use default message
