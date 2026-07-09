@@ -10,6 +10,7 @@ import { detectIntent, intentRequiresData } from "@/lib/intent";
 import { progressStageLabel } from "@/lib/progress";
 import { validateUploadFile } from "@/lib/upload";
 import type {
+  ActiveCleaningJob,
   DatasetResponse,
   JobResponse,
   CleaningStep,
@@ -28,6 +29,11 @@ import type {
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
+
+// Job ids currently being watched by a poll loop. Module-level so a remount
+// (StrictMode double-effect, route navigation) can't start a second watcher
+// for the same job and duplicate the results cards.
+const watchedCleaningJobs = new Set<string>();
 
 /* ── Component ──────────────────────────────────────────────────────────── */
 
@@ -71,6 +77,28 @@ export default function Chat() {
     }
     prevSessionRef.current = activeSessionId;
   }, [activeSessionId, clearCharts]);
+
+  // Re-attach to clean jobs that were running when the page was last unloaded:
+  // restore each session's workflow stepper and resume watching the job. The
+  // backend kept working through the refresh — this reconnects the UI to it.
+  useEffect(() => {
+    const state = useSessionStore.getState();
+    for (const [sessionId, job] of Object.entries(state.activeCleaningJobsBySession)) {
+      if (watchedCleaningJobs.has(job.jobId)) continue;
+      state.startWorkflow(sessionId, job.datasetId, job.datasetFilename);
+      state.setWorkflowStep(sessionId, "clean", "active");
+      state.updateMessage(sessionId, job.progressMessageId, {
+        card: {
+          type: "cleaning_progress",
+          progress: 0,
+          status: "running",
+          message: "Reconnecting to running job...",
+        },
+      });
+      void watchCleaningJob(sessionId, job);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- run once on mount; watchCleaningJob is a stable inner fn
+  }, []);
 
   /* ── Upload handler ──────────────────────────────────────────────────── */
 
@@ -390,9 +418,9 @@ export default function Chat() {
     }
   }
 
-  // Applies user-approved cleaning steps: runs the clean job, streams progress,
-  // then shows the validation + results cards. Triggered by the plan card's
-  // Apply button (the "apply_cleaning" card action) — never automatically.
+  // Applies user-approved cleaning steps: dispatches the clean job, registers
+  // it for re-attach, then watches it to completion. Triggered by the plan
+  // card's Apply button (the "apply_cleaning" card action) — never automatically.
   async function applyCleaningSteps(
     sessionId: string,
     datasetId: string,
@@ -428,12 +456,49 @@ export default function Chat() {
         })
         .json<JobResponse>();
 
-      // Poll job — apply endpoint returns JobResponse with id, not job_id.
+      // Register before watching so a refresh mid-job can re-attach.
+      const activeJob: ActiveCleaningJob = {
+        jobId: applyJob.id,
+        datasetId,
+        datasetFilename: dataset.filename,
+        progressMessageId: progressMsgId,
+        rowsBefore: dataset.row_count ?? 0,
+        steps,
+        startedAt: new Date().toISOString(),
+      };
+      useSessionStore.getState().registerCleaningJob(sessionId, activeJob);
+
+      await watchCleaningJob(sessionId, activeJob);
+    } catch (err) {
+      // Dispatch-phase failure (watchCleaningJob handles its own errors).
+      addMessage(
+        sessionId,
+        createMessage("assistant", "", {
+          type: "error",
+          title: "Cleaning failed",
+          message: err instanceof Error ? err.message : "Unknown error",
+          retry: { action: "apply_cleaning", data: { datasetId, steps }, label: "Retry cleaning" },
+        }),
+      );
+      clearWorkflow(sessionId);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  // Watches a dispatched clean job to a terminal state: drives the progress
+  // card, then adds the validation + results cards. Shared by the apply flow
+  // and the mount-time re-attach after a refresh. Never throws.
+  async function watchCleaningJob(sessionId: string, job: ActiveCleaningJob) {
+    if (watchedCleaningJobs.has(job.jobId)) return;
+    watchedCleaningJobs.add(job.jobId);
+
+    const { updateMessage, clearCleaningJob } = useSessionStore.getState();
+    try {
       // The worker persists per-stage progress on the Job row, so polling
       // drives an honest progress bar.
-      const updateMessage = useSessionStore.getState().updateMessage;
-      const jobResult = await pollJob(applyJob.id, (progress) => {
-        updateMessage(sessionId, progressMsgId, {
+      const jobResult = await pollJob(job.jobId, (progress) => {
+        updateMessage(sessionId, job.progressMessageId, {
           card: {
             type: "cleaning_progress",
             progress,
@@ -444,7 +509,7 @@ export default function Chat() {
       });
 
       // Update progress card to complete
-      updateMessage(sessionId, progressMsgId, {
+      updateMessage(sessionId, job.progressMessageId, {
         card: {
           type: "cleaning_progress",
           progress: 100,
@@ -479,7 +544,7 @@ export default function Chat() {
       setWorkflowStep(sessionId, "validate", "complete");
 
       // ── Final results card ───────────────────────────────────
-      const rowsBefore = dataset.row_count ?? 0;
+      const rowsBefore = job.rowsBefore;
       // result_json fields: cleaned_rows, rows_removed, cells_modified
       const rowsAfter = (result?.cleaned_rows as number) ?? rowsBefore;
       const issuesResolved = (result?.cells_modified as number) ?? 0;
@@ -490,11 +555,12 @@ export default function Chat() {
 
       const resultsCard: CleaningResultsPayload = {
         type: "cleaning_results",
-        downloadUrl: `/api/v1/cleaning/${applyJob.id}/download`,
+        downloadUrl: `/api/v1/cleaning/${job.jobId}/download`,
         rowsBefore,
         rowsAfter,
         issuesResolved,
-        datasetId,
+        datasetId: job.datasetId,
+        jobId: job.jobId,
         remediationApplied,
         unresolvableFlags,
       };
@@ -502,18 +568,33 @@ export default function Chat() {
 
       clearWorkflow(sessionId);
     } catch (err) {
+      // Flip the progress card to its error state instead of leaving it
+      // spinning at the last reported percentage.
+      updateMessage(sessionId, job.progressMessageId, {
+        card: {
+          type: "cleaning_progress",
+          progress: 0,
+          status: "error",
+          message: "Cleaning failed",
+        },
+      });
       addMessage(
         sessionId,
         createMessage("assistant", "", {
           type: "error",
           title: "Cleaning failed",
           message: err instanceof Error ? err.message : "Unknown error",
-          retry: { action: "apply_cleaning", data: { datasetId, steps }, label: "Retry cleaning" },
+          retry: {
+            action: "apply_cleaning",
+            data: { datasetId: job.datasetId, steps: job.steps },
+            label: "Retry cleaning",
+          },
         }),
       );
       clearWorkflow(sessionId);
     } finally {
-      setSending(false);
+      clearCleaningJob(sessionId);
+      watchedCleaningJobs.delete(job.jobId);
     }
   }
 

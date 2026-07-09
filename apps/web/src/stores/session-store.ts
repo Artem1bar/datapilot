@@ -1,6 +1,12 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Session, ChatMessageV2, WorkflowState, WorkflowStepId } from "@/types";
+import type {
+  ActiveCleaningJob,
+  Session,
+  ChatMessageV2,
+  WorkflowState,
+  WorkflowStepId,
+} from "@/types";
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
 
@@ -28,6 +34,10 @@ interface SessionState {
   // Keyed by session id: each session runs its own cleaning workflow, so a
   // second run in another session no longer clobbers the first.
   workflowStateBySession: Readonly<Record<string, WorkflowState>>;
+  // Dispatched clean jobs still being watched, keyed by session id. Persisted
+  // (unlike workflow state) so a refresh mid-job can re-attach and resume the
+  // progress card instead of losing the run.
+  activeCleaningJobsBySession: Readonly<Record<string, ActiveCleaningJob>>;
 
   // Session actions
   createSession: (title?: string) => string;
@@ -40,6 +50,10 @@ interface SessionState {
   // Message actions
   addMessage: (sessionId: string, message: ChatMessageV2) => void;
   updateMessage: (sessionId: string, messageId: string, updates: Partial<ChatMessageV2>) => void;
+
+  // Active-job tracking (re-attach after refresh)
+  registerCleaningJob: (sessionId: string, job: ActiveCleaningJob) => void;
+  clearCleaningJob: (sessionId: string) => void;
 
   // Workflow actions (scoped to a session)
   startWorkflow: (sessionId: string, datasetId: string, filename: string) => void;
@@ -58,6 +72,7 @@ export const useSessionStore = create<SessionState>()(
       activeSessionId: null,
       messagesBySession: {},
       workflowStateBySession: {},
+      activeCleaningJobsBySession: {},
 
       /* ── Session CRUD ─────────────────────────────────────────── */
 
@@ -85,11 +100,13 @@ export const useSessionStore = create<SessionState>()(
         set((state) => {
           const { [id]: _removed, ...rest } = state.messagesBySession;
           const { [id]: _wf, ...restWf } = state.workflowStateBySession;
+          const { [id]: _job, ...restJobs } = state.activeCleaningJobsBySession;
           return {
             sessions: state.sessions.filter((s) => s.id !== id),
             activeSessionId: state.activeSessionId === id ? null : state.activeSessionId,
             messagesBySession: rest,
             workflowStateBySession: restWf,
+            activeCleaningJobsBySession: restJobs,
           };
         }),
 
@@ -143,6 +160,22 @@ export const useSessionStore = create<SessionState>()(
               ),
             },
           };
+        }),
+
+      /* ── Active cleaning jobs (re-attach) ─────────────────────── */
+
+      registerCleaningJob: (sessionId, job) =>
+        set((state) => ({
+          activeCleaningJobsBySession: {
+            ...state.activeCleaningJobsBySession,
+            [sessionId]: job,
+          },
+        })),
+
+      clearCleaningJob: (sessionId) =>
+        set((state) => {
+          const { [sessionId]: _removed, ...rest } = state.activeCleaningJobsBySession;
+          return { activeCleaningJobsBySession: rest };
         }),
 
       /* ── Workflow ──────────────────────────────────────────────── */
@@ -199,6 +232,8 @@ export const useSessionStore = create<SessionState>()(
         sessions: state.sessions,
         activeSessionId: state.activeSessionId,
         messagesBySession: state.messagesBySession,
+        // Persisted so a refresh mid-clean can re-attach to the running job.
+        activeCleaningJobsBySession: state.activeCleaningJobsBySession,
       }),
     },
   ),

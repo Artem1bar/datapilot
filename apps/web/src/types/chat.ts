@@ -22,6 +22,23 @@ export interface WorkflowState {
   readonly datasetFilename: string;
 }
 
+/**
+ * A dispatched clean job the UI is (or should be) watching. Persisted so a
+ * refresh mid-job can re-attach: poll the job and restore the progress card.
+ * Everything here must be serializable.
+ */
+export interface ActiveCleaningJob {
+  readonly jobId: string;
+  readonly datasetId: string;
+  readonly datasetFilename: string;
+  /** Id of the persisted progress-card message this job drives. */
+  readonly progressMessageId: string;
+  readonly rowsBefore: number;
+  /** The approved steps, kept so a failure after refresh can offer retry. */
+  readonly steps: readonly CleaningStep[];
+  readonly startedAt: string;
+}
+
 /** Session metadata persisted across page loads. */
 export interface Session {
   readonly id: string;
@@ -83,8 +100,14 @@ export interface CleaningResultsPayload {
   readonly rowsAfter: number;
   readonly issuesResolved: number;
   readonly datasetId: string;
+  /** The clean job behind these results — drives compare/revert/save-as-recipe. */
+  readonly jobId?: string;
   readonly remediationApplied?: boolean;
   readonly unresolvableFlags?: readonly string[];
+  /** Set once the user reverts this cleaning, so the card reflects it across remounts. */
+  readonly reverted?: boolean;
+  /** Set once saved as a recipe, so the card shows the saved state across remounts. */
+  readonly savedRecipeName?: string;
 }
 
 export interface ErrorCardPayload {

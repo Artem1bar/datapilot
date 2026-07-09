@@ -97,6 +97,7 @@ export type {
   WorkflowStepStatus,
   WorkflowStep,
   WorkflowState,
+  ActiveCleaningJob,
   Session,
   CardPayload,
   ChatMessageV2,
