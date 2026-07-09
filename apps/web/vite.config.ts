@@ -13,7 +13,8 @@ export default defineConfig({
     port: parseInt(process.env.PORT || "5174", 10),
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        // Overridable so the E2E harness can point at its own API instance.
+        target: process.env.VITE_PROXY_TARGET || "http://localhost:8000",
         changeOrigin: true,
         timeout: 120_000, // 2 min for AI calls
       },

@@ -106,6 +106,7 @@ export function AttachMenu({
           <Button
             variant="ghost"
             size="icon"
+            aria-label="Open attach menu"
             className="h-9 w-9 shrink-0 text-ink-tertiary hover:text-ink hover:bg-[var(--surface-inset)] transition-all duration-150"
             disabled={disabled}
           >
