@@ -189,18 +189,10 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
-      minio:
-        # bitnami/minio auto-starts the server and creates the bucket. No
-        # service-level health-cmd: curl/mc aren't guaranteed inside the image,
-        # so readiness is polled from the runner (which has curl) in a step
-        # below before the E2E suite runs.
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: e2e-minio
-          MINIO_ROOT_PASSWORD: e2e-minio-secret
-          MINIO_DEFAULT_BUCKETS: datapilot
-        ports:
-          - 9000:9000
+      # MinIO is NOT a service container: GitHub can't override an image's
+      # command, and minio/minio needs a `server` arg to start. It's run as an
+      # explicit `docker run` step below instead (bitnami/minio:latest was
+      # pulled from Docker Hub in 2025 — "manifest unknown").
 
     env:
       E2E_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/datapilot_e2e
@@ -244,15 +236,19 @@ jobs:
       - name: Install Playwright browser
         run: pnpm --filter @datapilot/e2e exec playwright install chromium --with-deps
 
-      - name: Wait for MinIO
+      - name: Start MinIO and create the bucket
         run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=e2e-minio \
+            -e MINIO_ROOT_PASSWORD=e2e-minio-secret \
+            minio/minio:latest server /data
           for i in $(seq 1 30); do
-            if curl -sf http://localhost:9000/minio/health/live; then
-              echo "MinIO is ready"; exit 0
-            fi
+            curl -sf http://localhost:9000/minio/health/live && break
             echo "Waiting for MinIO ($i/30)..."; sleep 2
           done
-          echo "MinIO did not become ready in time" >&2; exit 1
+          curl -sf http://localhost:9000/minio/health/live || { echo "MinIO not ready" >&2; exit 1; }
+          docker run --rm --network host --entrypoint sh minio/mc:latest -c \
+            "mc alias set local http://localhost:9000 e2e-minio e2e-minio-secret && mc mb -p local/datapilot"
 
       - name: Run E2E suite
         run: pnpm --filter @datapilot/e2e test
