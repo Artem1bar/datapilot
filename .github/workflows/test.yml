@@ -190,6 +190,10 @@ jobs:
           --health-timeout 5s
           --health-retries 10
       minio:
+        # bitnami/minio auto-starts the server and creates the bucket. No
+        # service-level health-cmd: curl/mc aren't guaranteed inside the image,
+        # so readiness is polled from the runner (which has curl) in a step
+        # below before the E2E suite runs.
         image: bitnami/minio:latest
         env:
           MINIO_ROOT_USER: e2e-minio
@@ -197,11 +201,6 @@ jobs:
           MINIO_DEFAULT_BUCKETS: datapilot
         ports:
           - 9000:9000
-        options: >-
-          --health-cmd "mc ready local || curl -f http://localhost:9000/minio/health/live"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 10
 
     env:
       E2E_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/datapilot_e2e
@@ -244,6 +243,16 @@ jobs:
 
       - name: Install Playwright browser
         run: pnpm --filter @datapilot/e2e exec playwright install chromium --with-deps
+
+      - name: Wait for MinIO
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"; exit 0
+            fi
+            echo "Waiting for MinIO ($i/30)..."; sleep 2
+          done
+          echo "MinIO did not become ready in time" >&2; exit 1
 
       - name: Run E2E suite
         run: pnpm --filter @datapilot/e2e test
