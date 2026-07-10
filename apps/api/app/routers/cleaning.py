@@ -444,11 +444,15 @@ async def get_cleaning_comparison(
             detail="Failed to retrieve files from storage.",
         )
 
-    df_before = read_dataframe(before_bytes, dataset.filename)
+    # Parse + diff off the event loop (pandas is CPU-bound and files can be
+    # up to MAX_UPLOAD_BYTES) — mirrors POST /datasets/{id}/compare/{other}.
+    df_before = await asyncio.to_thread(read_dataframe, before_bytes, dataset.filename)
     # Cleaned CSVs written before 2026-07-09 carry an in-band audit trailer.
-    df_after = read_dataframe(strip_legacy_csv_legend(after_bytes), cleaned_key.split("/")[-1])
+    df_after = await asyncio.to_thread(
+        read_dataframe, strip_legacy_csv_legend(after_bytes), cleaned_key.split("/")[-1]
+    )
 
-    report = compare_datasets(df_before, df_after)
+    report = await asyncio.to_thread(compare_datasets, df_before, df_after)
     report["datasets"] = {
         "before": {"id": str(dataset.id), "filename": dataset.filename},
         "after": {"id": str(job.id), "filename": cleaned_key.split("/")[-1]},
