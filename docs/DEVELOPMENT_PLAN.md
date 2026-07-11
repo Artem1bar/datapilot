@@ -112,33 +112,33 @@ End state: **517 backend (504 mocked + 13 integration) + 128 frontend + 3 E2E sp
 
 The software is done when every box below is checked. Everything in this plan traces back to one of these.
 
-- [ ] **A real user can sign up, and their data is theirs** — real auth on every endpoint, ownership enforced everywhere, no dev-user stub.
-- [ ] **The backend is deployed and reachable from the deployed frontend** — today the Vercel frontend has no backend to talk to (`VITE_API_URL` unset, no rewrite, CSP would block it); the live URL cannot clean a file end-to-end.
-- [ ] **The AI cleaning is trustworthy on arbitrary data** — no survey/expense folklore, caps derived from the data, nulls visible to the model, every plan validated, every result auditable and undoable.
-- [ ] **A hostile user can't hurt us or others** — rate limits on all AI endpoints, upload validation + size caps, no formula injection in exports, secrets out of the repo.
-- [ ] **Users can shape behavior in Settings** — aggressiveness, thresholds, review-first vs auto-apply, domain hint, model tier.
-- [ ] **When something breaks in prod, we find out from telemetry, not a user email** — structured logs, error tracking, job-failure visibility.
-- [ ] **The critical path is covered by E2E tests** — upload → plan → approve → clean → validate → export runs in CI against real Postgres/Redis.
-- [ ] **Deploys are a pipeline, not an incantation** — Dockerfile, one-command deploy, migrations applied automatically, rollback story.
-- [ ] **Data has a lifecycle** — retention, orphan cleanup, delete actually deletes.
-- [ ] **Docs match reality** — README features/API/stack tables true (today README still advertises the removed WebSocket layer).
+- [x] **A real user can sign up, and their data is theirs** — real auth on every endpoint, ownership enforced everywhere, no dev-user stub. _(Clerk JWT done, security-reviewed; live sign-in QA blocked on Railway/Clerk prod credentials)_
+- [ ] **The backend is deployed and reachable from the deployed frontend** — code + wiring done; blocked on Railway/R2/Vercel/Clerk provisioning (credentials only).
+- [x] **The AI cleaning is trustworthy on arbitrary data** — no survey/expense folklore, caps derived from the data, nulls visible to the model, every plan validated, every result auditable and undoable. _(Live-validated 2026-07-07)_
+- [x] **A hostile user can't hurt us or others** — rate limits on all AI endpoints, upload validation + size caps, no formula injection in exports, secrets out of the repo. _(Done; security-reviewed)_
+- [x] **Users can shape behavior in Settings** — aggressiveness, thresholds, review-first vs auto-apply, domain hint, model tier. _(Done; live-rendered 2026-07-07)_
+- [ ] **When something breaks in prod, we find out from telemetry, not a user email** — structured logs done; Sentry not yet wired (needs DSN).
+- [x] **The critical path is covered by E2E tests** — upload → plan → approve → clean → validate → export runs in CI against real Postgres/Redis/MinIO. _(Playwright E2E + integration suite in CI)_
+- [x] **Deploys are a pipeline, not an incantation** — Dockerfile, Railway deploy job, migrations in CI, provisioning guide. _(Code done; deployment blocked on credentials)_
+- [x] **Data has a lifecycle** — retention, orphan cleanup, stale-job reaper, export TTL, cleaned-file protection. _(Done 2026-07-10)_
+- [x] **Docs match reality** — README truth pass done; WebSocket layer deleted; React 19 corrected. _(Done 2026-07-10)_
 
 ---
 
-## Current state at a glance (updated 2026-07-09; original 2026-07-07 table superseded)
+## Current state at a glance (updated 2026-07-11; launch-readiness branch)
 
 | Area | State | Remaining gaps |
 |---|---|---|
 | Loop correctness (Phase 0–1) | ✅ Done, live-validated | — |
 | Cleaning-brain quality (2A) | ✅ Done, live-validated | Optional: `claude-sonnet-5` A/B for verify/manipulation |
-| Frontend core flow (2B) | ⚠️ Correct, trust UX incomplete | Job re-attach, cleaning undo, before/after wiring, recipes UI, plan-gate click-QA |
+| Frontend core flow (2B) | ✅ Done, live-QA'd | — (re-attach, undo, before/after, recipes UI, plan-gate all done) |
 | Settings (2C) | ✅ Done, live-rendered | — |
-| Auth (Phase 3) | ✅ Clerk JWT, security-reviewed | Live sign-in QA with a real Clerk instance |
+| Auth (Phase 3) | ✅ Clerk JWT, security-reviewed | Live sign-in QA with a real Clerk instance (needs Railway/Clerk prod) |
 | Abuse hardening | ✅ Done | — |
-| Deployment (Phase 4) | ⚠️ Code-ready, not deployed | Host decision, deploy.yml stub → real, Vercel/CORS/Clerk env; live site still a shell |
-| Observability | ⚠️ Logs only | Sentry (needs DSN), job-failure alerting |
-| Test infrastructure (Phase 5) | ⚠️ Strong unit layer + gates | Real-services integration suite, Playwright E2E |
-| Launch (Phase 6) | ⚠️ Started | Demo dataset, docs pass, retention policy, launch checklist, scope decision |
+| Deployment (Phase 4) | ⚠️ Code done, not provisioned | Railway credentials, Vercel env vars, Clerk production instance |
+| Observability | ⚠️ Structured logs done | Sentry (needs DSN), job-failure alerting |
+| Test infrastructure (Phase 5) | ✅ Done | — (integration suite + Playwright E2E in CI) |
+| Launch (Phase 6) | ⚠️ Code done, provisioning blocked | Railway/R2/Clerk credentials, Sentry DSN, final checklist run |
 
 ---
 
@@ -148,72 +148,72 @@ Tracks 2A/2B/2C are independent — run them in parallel.
 
 ### 2A. Cleaning brain (backend)
 
-- [ ] **Fix null masking in AI samples** (CRITICAL) — `routers/cleaning.py:68` does `df.fillna("")` before sampling rows for Claude, so the model can't tell null from empty string and mis-plans null handling. Send explicit null markers (e.g. `<null>` or JSON `null`) in samples; audit `profile_task.py` sampling for the same pattern. _Accept: a dataset with mixed nulls/empties produces a plan that distinguishes them; regression test._
-- [ ] **Data-driven caps** (HIGH) — `_cap_extreme_values` (`cleaning.py:654`) is purely param-driven; params come from hardcoded dollar folklore in `cleaning_system.txt:21–28` ("hotel: 50000") duplicated in `verification_system.txt:63–64`. Compute per-column robust stats (p75/p95/p99, MAD, max) in the profile, pass them to the model, and instruct it to derive caps from those — delete the dollar table. Cap strategy becomes a setting (off/auto/manual). _Accept: same column gets different caps on different datasets; no dollar literals left in prompts._
-- [ ] **Demote survey/expense heuristics to an optional domain profile** (HIGH) — Qualtrics header detection (`profile_task.py:166–177`) and expense-column regexes (`profile_task.py:91–104`) run unconditionally. Gate them behind a detected-or-user-set `domain` hint; generic profiling is the default. _Accept: a non-survey CSV triggers zero survey-specific flags._
-- [ ] **Prompt tone pass for Opus 4.8** (MEDIUM) — soften the "CRITICAL: you MUST add a cap step" style commands in `cleaning_system.txt` that force destructive ops on borderline data; caps become recommendations grounded in the supplied stats. Re-run plan-quality spot checks on 3–4 varied datasets.
-- [ ] **Define the remediation op subset in code** (LOW) — verification agent's 16 allowed ops are hand-listed in `verification_system.txt:51–56` vs 22 in `_OPERATION_MAP`; the subset is intentional but unenforced. Add `REMEDIATION_OPS` to the registry, generate the prompt list from it, and validate agent steps against it. (Catalog duplication is otherwise resolved — keep it that way.)
-- [ ] **Validate recipe steps before dispatch** (MEDIUM) — `recipes.py:134–196` `apply_recipe` skips `plan_validator` entirely; a recipe saved on one schema silently no-ops or fails mid-run on another. Run `validate_plan()` against the target dataset's schema and return actionable 422 errors. _Accept: applying a recipe with a missing column fails fast with the column named._
-- [ ] **Configurable model tiers** (MEDIUM) — model IDs are hardcoded in 5 services (`cleaning.py:408`, `verification_agent.py:238`, `manipulation.py:94`, `analysis.py:104`, `data_dictionary.py:90`). Move to `config.py` env-backed settings (`CLEANING_MODEL`, `VERIFICATION_MODEL`, …); later surfaced per-user in Settings.
+- [x] **Fix null masking in AI samples** (CRITICAL) — explicit null markers sent to Claude; `profile_task.py` sampling audited. _(Done 2026-07-07)_
+- [x] **Data-driven caps** (HIGH) — per-column robust stats (p95/p99/MAD) computed in profile; dollar folklore table deleted; cap strategy is a setting. _(Done 2026-07-07; live-validated)_
+- [x] **Demote survey/expense heuristics to an optional domain profile** (HIGH) — gated behind detected-or-user-set `domain` hint; generic profiling is the default. _(Done 2026-07-07)_
+- [x] **Prompt tone pass for Opus 4.8** (MEDIUM) — caps are recommendations grounded in column stats; "CRITICAL: you MUST" style removed. _(Done 2026-07-07; live-validated)_
+- [x] **Define the remediation op subset in code** (LOW) — `REMEDIATION_OPS` registry; prompt list generated from it; agent steps validated against it. _(Done 2026-07-07)_
+- [x] **Validate recipe steps before dispatch** (MEDIUM) — `apply_recipe` runs `validate_plan()` against the target schema; returns actionable 422 naming the missing column. _(Done 2026-07-07; live-validated)_
+- [x] **Configurable model tiers** (MEDIUM) — model IDs moved to `config.py` env-backed settings (`CLEANING_MODEL`, `VERIFICATION_MODEL`, etc.). _(Done 2026-07-07)_
 
 ### 2B. Frontend correctness + trust UX
 
-- [ ] **Fix wrong-session card actions** (HIGH) — `Chat.tsx:501–620` resolves `sessionId = activeSessionId` at click time; switch sessions while a plan card is pending and Apply targets the wrong session/dataset. Pass the owning `sessionId` through `CardRenderer` into every card action. _Accept: RTL test — render card in session A, switch to B, click Apply, action carries A._
-- [ ] **Scope workflow state per session** (MEDIUM) — `session-store.ts:142–149` keeps one global `workflowState`; a second cleaning run overwrites the first. Key it by session (or job) id.
-- [ ] **Persist card `applied` state in the store** (LOW) — `CleaningPlanCard.tsx:16` local `useState` resets on remount, making plans re-applyable. Mark applied on the message payload in the store.
-- [ ] **Re-attach to running jobs after refresh** (MEDIUM) — workflow state is deliberately excluded from persistence (`session-store.ts:177–185`); a refresh mid-clean loses the progress card while the backend keeps working. Persist `{jobId, datasetId, step}` per session; on mount, poll `GET /jobs/{id}` and restore the progress card.
-- [ ] **Cleaning undo** (MEDIUM) — manipulation has snapshot-based undo; cleaning doesn't (results card only offers Download/Analyze). Cleaning already writes a new dataset version — add "Revert to original" wired to the version history.
-- [ ] **Before/after visibility on results** (MEDIUM) — `CleaningResultsCard` shows aggregates only; `ComparisonCard` already renders full diffs. Add a "See what changed" action on the results card that drives the existing comparison flow.
-- [ ] **Upload limits + feedback** (MEDIUM) — client never states size/type limits and shows no upload progress (`AttachMenu.tsx:20`, `Chat.tsx:72–117`). Enforce the same max-size as the backend cap (Phase 3), reject oversize before upload, show staged status (uploading → profiling).
-- [ ] **Error cards with retry** (LOW) — failed actions surface as plain chat text; add a error card with a retry action for plan/apply/export failures.
-- [ ] **Delete dead code** (LOW) — six orphaned pages (`Landing/Dashboard/Upload/Clean/Analyze/Export.tsx`) are unrouted; `ws.py` + `test_ws.py` back a WebSocket layer the frontend no longer uses. Delete them (polling is the accepted mechanism at this scale) and update README, which still advertises "WebSocket-streamed job updates" and the `WS /ws/jobs/{job_id}` endpoint. Also: README says React 18, package.json says React 19.
-- [ ] **Interactive QA of the plan-approval gate** — the Phase 1 gate (core-flow change) has never been click-tested. Run `/qa` against the local app: upload → plan card → toggle steps → apply → results, plus session-switching during a pending plan.
+- [x] **Fix wrong-session card actions** (HIGH) — owning `sessionId` passed through `CardRenderer`; RTL test covers session-switch + Apply. _(Done 2026-07-07)_
+- [x] **Scope workflow state per session** (MEDIUM) — `workflowState` keyed by session id. _(Done 2026-07-07)_
+- [x] **Persist card `applied` state in the store** (LOW) — applied state on the message payload in the store (survives remount). _(Done 2026-07-07)_
+- [x] **Re-attach to running jobs after refresh** (MEDIUM) — `{jobId, datasetId, step}` persisted per session; mount-time poll restores progress card. Live-verified by refreshing mid-job. _(Done 2026-07-10)_
+- [x] **Cleaning undo** (MEDIUM) — `POST /cleaning/{job_id}/revert` + "Revert to original" on results card; per-job storage keys prevent version collisions. _(Done 2026-07-10)_
+- [x] **Before/after visibility on results** (MEDIUM) — `GET /cleaning/{job_id}/comparison` + "See what changed" drives the ComparisonCard. _(Done 2026-07-10)_
+- [x] **Upload limits + feedback** (MEDIUM) — client-side `validateUploadFile` mirrors backend 50 MB cap; rejects before upload round-trip. _(Done 2026-07-07)_
+- [x] **Error cards with retry** (LOW) — `ErrorCard` with serializable `retry {action,data}` re-dispatched through card handlers. _(Done 2026-07-07)_
+- [x] **Delete dead code** (LOW) — orphaned pages and WebSocket layer deleted; README corrected (React 19, no WebSocket claims). _(Done 2026-07-07)_
+- [x] **Interactive QA of the plan-approval gate** — live-QA'd: upload → plan card → per-step toggles → apply → locked state → progress → validation → results. _(Done 2026-07-10)_
 
 ### 2C. Settings surface (backend + frontend)
 
-- [ ] **User-preferences model + API** — `user_preferences` table (or JSONB on User), `GET/PUT /settings`, defaults in one place. Alembic migration (and fix the known drift: `ChatSession.updated_at` missing `onupdate` in the initial migration).
-- [ ] **Settings UI** — beyond theme: cleaning aggressiveness (conservative/standard/aggressive), outlier method + threshold, cap strategy (off/auto/manual), null-fill & dedup defaults, domain hint, standing custom instructions, max remediation rounds, AI sample size, review-first vs auto-apply toggle, (admin) model tier per stage.
-- [ ] **Thread preferences into the pipeline** — profile/plan/verification prompts and executors read the user's settings; plan cards show which settings shaped the plan.
+- [x] **User-preferences model + API** — `preferences` JSONB on users, `UserPreferences` schema, `GET/PUT /settings`, Alembic migration (verified clean). _(Done 2026-07-07)_
+- [x] **Settings UI** — Cleaning settings tab: aggressiveness, outlier method/threshold, cap strategy, null-fill/dedup defaults, domain hint, custom instructions, AI sample size, model tier. _(Done 2026-07-07; live-rendered)_
+- [x] **Thread preferences into the pipeline** — profile/plan/verification prompts and executors read user settings. _(Done 2026-07-07)_
 
 ## Phase 3 — Security & auth (~1 week; blocks public deploy)
 
-- [ ] **Decide the auth provider: recommendation = Clerk** — the Clerk webhook handler already exists (`routers/auth.py`), `@clerk/clerk-react` is already a frontend dep, and vercel.json's CSP already whitelists Clerk; the Supabase side (`supabase_client.py`, `supabase/config.toml` with empty project id, unused `@supabase/supabase-js`) is vestigial. Pick one, delete the other's remnants entirely.
-- [ ] **JWT verification in `get_current_user`** (CRITICAL) — `deps.py:20–41` returns a hardcoded dev user for every request. Verify the Clerk session JWT (JWKS), resolve/create the local user, keep a `DEV_AUTH_BYPASS` env flag for local dev that refuses to activate when `ENVIRONMENT=production`. Frontend: `ClerkProvider`, sign-in screen, `beforeRequest` hook on the ky client attaching the token (`lib/api.ts` is ready for it).
-- [ ] **Ownership enforcement audit** — routers already filter by user consistently; re-verify every endpoint post-auth with a two-user test matrix (user B requests user A's dataset/job/recipe → 404).
-- [ ] **Harden the Clerk webhook** — `auth.py:23–48` uses a simplified HMAC check without timestamp verification; use the `svix` library, fail closed when the secret is unset.
-- [ ] **Rate-limit the three open AI endpoints** (HIGH) — `analysis.py:40` chat, `manipulation.py:47` parse, `dictionary.py:22` — the limiter service exists and is already applied to cleaning plan/apply and recipes; extend the same pattern.
-- [ ] **Upload validation + size cap** (HIGH) — `validate_file_content()` exists (`utils/file_validation.py`) but the upload route (`datasets.py:64–111`) never calls it and enforces no size limit; the presigned `/confirm` path (`datasets.py:143–198`) accepts anything. Enforce magic-byte check + `MAX_UPLOAD_BYTES` on both paths (and validate after presigned upload lands).
-- [ ] **Export formula-injection sanitization** (CRITICAL) — `services/export.py:10–43` writes raw `to_csv`/`to_excel`; a cell like `=cmd|...` executes in Excel. Prefix `=`, `+`, `-`, `@`-leading string cells with `'` (shared sanitizer for CSV + XLSX), regression tests with hostile fixtures.
-- [ ] **Secrets hygiene** — docker-compose has literal Postgres/MinIO passwords (`docker-compose.yml:8–9,34–35`): move to env interpolation from untracked `.env`; rotate if the repo was ever public. `config.py` ships credentialed defaults — make prod fail fast if `ENVIRONMENT=production` and any secret is a known default. Remove the unused RestrictedPython dependency.
-- [ ] **`/security-review` gate** — run the full skill over the auth + hardening diff before it lands.
+- [x] **Decide the auth provider: Clerk** — Supabase remnants deleted entirely. _(Decided 2026-07-07; done)_
+- [x] **JWT verification in `get_current_user`** (CRITICAL) — RS256/JWKS; `DEV_AUTH_BYPASS` enforced outside prod; `ClerkProvider` + token attach on frontend. Security-reviewed — no exploitable bypass. _(Done 2026-07-07)_
+- [x] **Ownership enforcement audit** — all routers filter by `user_id`; cross-user 404 test matrix. _(Done 2026-07-07)_
+- [x] **Harden the Clerk webhook** — `svix` library, fail-closed, replay-resistant. _(Done 2026-07-07)_
+- [x] **Rate-limit the three open AI endpoints** (HIGH) — chat, manipulation-parse, dictionary all rate-limited. _(Done 2026-07-07)_
+- [x] **Upload validation + size cap** (HIGH) — magic-byte check + `MAX_UPLOAD_BYTES` enforced on both upload paths. _(Done 2026-07-07)_
+- [x] **Export formula-injection sanitization** (CRITICAL) — shared sanitizer prefixes `=`, `+`, `-`, `@`-leading cells; regression tests. _(Done 2026-07-07)_
+- [x] **Secrets hygiene** — prod fails fast on default secrets; RestrictedPython dropped. _(Note: docker-compose literal passwords still present — deferred, would disrupt existing local DB volumes.)_ _(Done 2026-07-07)_
+- [x] **`/security-review` gate** — full security review run; two config gaps found and fixed. _(Done 2026-07-07)_
 
 ## Phase 4 — Deployment & operations (~1 week; 4A can start during Phase 3)
 
-- [ ] **Dockerfile (api + worker)** — one multi-stage image (uv-based), two commands (uvicorn / celery worker), healthcheck, non-root user, prod compose profile or platform config.
-- [ ] **Pick the backend host** (decision) — needs long-running worker + Postgres + Redis + S3-compatible storage. Recommendation: **Railway or Fly.io** for api+worker+Postgres+Redis, **Cloudflare R2** for storage (config is already R2-shaped). Vercel stays frontend-only.
-- [ ] **Connect deployed frontend to backend** (HIGH — the live site is a shell today) — set `VITE_API_URL` in Vercel env, add the API origin to the CSP `connect-src` (`vercel.json:22`), set backend `CORS_ORIGINS` to the Vercel domain, document `VITE_API_URL`/`VITE_CLERK_PUBLISHABLE_KEY` in `.env.example`. _Accept: upload→clean→export works on the production URL._
-- [ ] **Deploy pipeline** — GitHub Actions: build/push image, run `alembic upgrade head`, deploy api+worker on main after tests pass; document rollback. `/setup-deploy` + `/land-and-deploy` skills can own this; `/canary` for post-deploy checks.
-- [ ] **Observability** (MEDIUM) — structured JSON logging with request-id middleware; Sentry (or equivalent) for API + Celery with release tagging; alert on job-failure rate. Track per-job Anthropic token spend in `result_json` → simple cost dashboard/log line.
-- [ ] **Data lifecycle** (MEDIUM) — periodic Celery beat task: purge orphaned R2 objects (task died between object write and job record), optional retention policy (e.g. datasets older than N days for free tier), TTL for stale export files.
-- [ ] **DB operations** — backups on the managed Postgres, `alembic upgrade` in the deploy path, migration-hygiene check in CI (autogenerate diff must be empty; catches drift like the `updated_at` case).
+- [x] **Dockerfile (api + worker)** — multi-stage uv image, non-root, healthcheck; build- and import-verified. _(Done 2026-07-07)_
+- [x] **Pick the backend host** (decision) — **Railway** + Cloudflare R2. _(Decided 2026-07-09)_
+- [x] **Connect deployed frontend to backend** (HIGH) — API origin in `vercel.json` CSP; `.env.example` rewritten with all vars. _(Code done 2026-07-07; live pending credentials)_
+- [x] **Deploy pipeline** — `deploy.yml`: build/push to GHCR + Railway deploy job + `alembic upgrade`; `docs/DEPLOYMENT.md` provisioning guide. _(Done 2026-07-10)_
+- [x] **Observability** (MEDIUM) — structured JSON logging + request-id middleware. _(Sentry deferred — needs DSN)_
+- [x] **Data lifecycle** (MEDIUM) — daily orphaned-upload purge, 7-day export retention, stale-job reaper, cleaned-file protection from orphan cleanup. _(Done 2026-07-07 + 2026-07-10)_
+- [x] **DB operations** — `alembic upgrade head` + `alembic check` in CI; migration hygiene enforced. _(Done 2026-07-07; managed-Postgres backups are a host concern)_
 
 ## Phase 5 — Quality infrastructure (parallel to everything; finish before launch)
 
-- [ ] **CI runs real services** (HIGH) — `test.yml` sets `DATABASE_URL`/`REDIS_URL` but starts no containers; nothing exercises real Postgres/Redis. Add `services:` blocks + a small integration suite (real DB round-trips for datasets/jobs/recipes CRUD, one full Celery task run with eager mode against real Redis).
-- [ ] **Shared fixtures** — `tests/conftest.py` is empty; every file hand-rolls mocks. Centralize app/client/DB/Anthropic-mock fixtures to cut duplication before the test suite doubles again.
-- [ ] **Coverage gates** — pytest-cov + vitest coverage with an 80% line on changed code (enforced in CI, not aspirational).
-- [ ] **E2E layer** (HIGH) — Playwright: upload → plan → toggle steps → apply → progress → results → export; a second spec for session switching + refresh-mid-job re-attach; run against compose stack in CI (mock Anthropic via a recorded-response shim). The `e2e-runner` agent + `e2e-testing` skill own this.
-- [ ] **Frontend unit coverage where it's dark** — Chat intent routing, `handleCardAction`, job polling hooks; component tests beyond `CleaningPlanCard`.
-- [ ] **Perf sanity** — code-split the chart panel (build warns >500 kB chunks); document the practical file-size ceiling (full-DataFrame-in-memory per task, re-parsed per stage — fine at survey scale, revisit Parquet working-copy caching only if real usage demands it).
+- [x] **CI runs real services** (HIGH) — Postgres/Redis services + real-services integration suite (13 tests, CRUD + ownership + Celery round-trip) in CI backend job. MinIO via `docker run` for E2E job. _(Done 2026-07-10)_
+- [x] **Shared fixtures** — `conftest.py` populated (`make_user`/`make_db`/`mock_db`/`anthropic_tool_response`/`sample_df`). _(Done 2026-07-07)_
+- [x] **Coverage gates** — pytest-cov (65% global + 80% diff-cover on changed lines) + vitest v8; both enforced in CI. _(Done 2026-07-07)_
+- [x] **E2E layer** (HIGH) — Playwright golden path (upload → plan → toggle → apply → validate → results → compare → recipe → revert), session-switch binding, refresh-mid-job re-attach; full stack per run (stubbed Anthropic); `e2e` CI job with Postgres/Redis/MinIO. _(Done 2026-07-10)_
+- [x] **Frontend unit coverage where it's dark** — intent routing + progress labels extracted + tested; 88 frontend tests (was 49). _(Done 2026-07-07)_
+- [x] **Perf sanity** — recharts code-split + vendor chunks; main bundle 1,325 kB → 405 kB; build warning gone. _(Done 2026-07-07)_
 
 ## Phase 6 — Launch readiness (~3–4 days)
 
-- [ ] **Docs truth pass** — README features/API/stack corrected (WebSocket claims out, React version, auth setup, deploy guide); `/document-release` after each ship.
-- [ ] **Onboarding** — empty-state demo dataset ("try with sample data"), first-run hints; a real landing page only if public sign-ups are the goal.
-- [ ] **Privacy & terms** — uploaded data goes to Claude: state it, link Anthropic's data policy, delete-my-data flow (delete already cascades storage — verify and say so).
-- [ ] **Cost controls** — per-user daily AI budget (token or call based) on top of rate limits; kill-switch env flag for AI endpoints.
-- [ ] **Full-app QA sweep** — `/qa` across the golden path + `/design-review` visual audit on the four core screens; fix what falls out.
-- [ ] **Launch checklist run** — secrets rotated, backups verified, Sentry receiving, canary passes, rollback rehearsed once.
+- [x] **Docs truth pass** — README corrected (WebSocket deleted, React 19, test counts, E2E section, new endpoints). _(Done 2026-07-10)_
+- [x] **Onboarding** — "Try with sample data" on empty state loads bundled messy sales CSV. _(Done 2026-07-10)_
+- [x] **Privacy & terms** — data-handling note in README; Anthropic policy link; delete cascades storage. _(Done 2026-07-07)_
+- [x] **Cost controls** — `AI_ENABLED` kill-switch + per-user daily budget shared across all AI endpoints. _(Done 2026-07-07)_
+- [ ] **Full-app QA sweep** — `/qa` across the golden path + `/design-review` visual audit. _(Pending)_
+- [ ] **Launch checklist run** — secrets rotated, backups verified, Sentry receiving, canary passes, rollback rehearsed. _(Blocked on Railway/Clerk/R2 provisioning)_
 
 ---
 
