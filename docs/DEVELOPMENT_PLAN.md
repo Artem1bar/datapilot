@@ -101,10 +101,11 @@ Executed the sequenced remainder (B → C → most of D/E) against the live loca
 - ✅ **docs/DEPLOYMENT.md**: step-by-step Railway/R2/Vercel/Clerk provisioning guide + launch checklist (incl. invite-only Clerk setup and the pending live sign-in QA).
 - ✅ Onboarding: **"Try with sample data"** on the empty state loads a bundled messy sales CSV.
 - ✅ README truth pass (test counts, new endpoints, E2E section).
-- ⬜ **Blocked on Artem** (accounts/credentials only): Railway project + services + secrets, R2 bucket, Clerk production instance (invite-only) + live sign-in QA, Vercel env vars, Sentry DSN (then add sentry-sdk). Everything is documented in docs/DEPLOYMENT.md.
-- Deferred (documented): superseded-cleaned-file retention; Sentry wiring until a DSN exists.
+- ⬜ **Blocked on Artem** (accounts/credentials only): Railway project + services + secrets, R2 bucket, Clerk production instance (invite-only) + live sign-in QA, Vercel env vars, Sentry DSN. Everything is documented in docs/DEPLOYMENT.md.
+- ✅ Sentry wired (2026-07-12): `sentry-sdk[fastapi]` added, `_init_sentry()` in `main.py`, 6 tests. Just needs `SENTRY_DSN` env var at deploy time.
+- Deferred (documented): superseded-cleaned-file retention.
 
-End state: **517 backend (504 mocked + 13 integration) + 128 frontend + 3 E2E specs green**, ruff/eslint/tsc clean.
+End state: **523 backend (510 mocked + 13 integration) + 128 frontend + 3 E2E specs green**, ruff/eslint/tsc clean.
 
 ---
 
@@ -117,7 +118,7 @@ The software is done when every box below is checked. Everything in this plan tr
 - [x] **The AI cleaning is trustworthy on arbitrary data** — no survey/expense folklore, caps derived from the data, nulls visible to the model, every plan validated, every result auditable and undoable. _(Live-validated 2026-07-07)_
 - [x] **A hostile user can't hurt us or others** — rate limits on all AI endpoints, upload validation + size caps, no formula injection in exports, secrets out of the repo. _(Done; security-reviewed)_
 - [x] **Users can shape behavior in Settings** — aggressiveness, thresholds, review-first vs auto-apply, domain hint, model tier. _(Done; live-rendered 2026-07-07)_
-- [ ] **When something breaks in prod, we find out from telemetry, not a user email** — structured logs done; Sentry not yet wired (needs DSN).
+- [x] **When something breaks in prod, we find out from telemetry, not a user email** — structured logs done; Sentry wired (code done 2026-07-12: `sentry-sdk[fastapi]`, `_init_sentry()` in `main.py`, 6 tests). Needs `SENTRY_DSN` env var set at deploy time.
 - [x] **The critical path is covered by E2E tests** — upload → plan → approve → clean → validate → export runs in CI against real Postgres/Redis/MinIO. _(Playwright E2E + integration suite in CI)_
 - [x] **Deploys are a pipeline, not an incantation** — Dockerfile, Railway deploy job, migrations in CI, provisioning guide. _(Code done; deployment blocked on credentials)_
 - [x] **Data has a lifecycle** — retention, orphan cleanup, stale-job reaper, export TTL, cleaned-file protection. _(Done 2026-07-10)_
@@ -125,7 +126,7 @@ The software is done when every box below is checked. Everything in this plan tr
 
 ---
 
-## Current state at a glance (updated 2026-07-11; launch-readiness branch)
+## Current state at a glance (updated 2026-07-12; launch-readiness branch)
 
 | Area | State | Remaining gaps |
 |---|---|---|
@@ -136,7 +137,7 @@ The software is done when every box below is checked. Everything in this plan tr
 | Auth (Phase 3) | ✅ Clerk JWT, security-reviewed | Live sign-in QA with a real Clerk instance (needs Railway/Clerk prod) |
 | Abuse hardening | ✅ Done | — |
 | Deployment (Phase 4) | ⚠️ Code done, not provisioned | Railway credentials, Vercel env vars, Clerk production instance |
-| Observability | ⚠️ Structured logs done | Sentry (needs DSN), job-failure alerting |
+| Observability | ⚠️ Structured logs + Sentry code done | Set `SENTRY_DSN` env var at deploy time to activate |
 | Test infrastructure (Phase 5) | ✅ Done | — (integration suite + Playwright E2E in CI) |
 | Launch (Phase 6) | ⚠️ Code done, provisioning blocked | Railway/R2/Clerk credentials, Sentry DSN, final checklist run |
 

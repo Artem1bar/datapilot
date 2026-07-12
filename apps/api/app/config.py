@@ -61,6 +61,10 @@ class Settings(BaseSettings):
     # CORS
     CORS_ORIGINS: str = "http://localhost:5174"
 
+    # Error tracking (Sentry). Empty string = disabled (default in dev).
+    # Set to a Sentry DSN in production to enable error + performance tracking.
+    SENTRY_DSN: str = ""
+
     # Deployment. Typed so a typo (e.g. "prod") fails validation at startup
     # rather than silently re-enabling the dev auth bypass.
     ENVIRONMENT: Literal["development", "staging", "production"] = "development"

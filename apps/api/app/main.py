@@ -4,12 +4,26 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 
+import sentry_sdk
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sentry_sdk.integrations.fastapi import FastApiIntegration
 
 from app.config import settings
 from app.logging_config import configure_logging
 from app.middleware import RequestContextMiddleware
+
+
+def _init_sentry() -> None:
+    if not settings.SENTRY_DSN:
+        return
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        integrations=[FastApiIntegration()],
+        environment=settings.ENVIRONMENT,
+        traces_sample_rate=0.1,
+        send_default_pii=False,
+    )
 
 
 @asynccontextmanager
@@ -31,6 +45,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Build the FastAPI application with all routers and middleware."""
+    _init_sentry()
     configure_logging(json_logs=settings.ENVIRONMENT != "development")
 
     app = FastAPI(

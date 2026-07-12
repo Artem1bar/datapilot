@@ -68,10 +68,13 @@ is an account/dashboard action only the project owner can do.
 
 ## 5. Sentry (optional but recommended before launch)
 
-Create a Sentry project → set `SENTRY_DSN` on both Railway services. The
-`sentry-sdk` dependency and init wiring are **not installed yet** (deferred
-until a DSN exists) — add `sentry-sdk[fastapi,celery]` to `apps/api` and init
-in `app/main.py` + `app/tasks/celery_app.py` when provisioning this.
+The `sentry-sdk[fastapi]` dependency is installed and the init wiring is live
+in `app/main.py` (`_init_sentry()` — no-op when `SENTRY_DSN` is unset).
+
+To activate: create a Sentry project (FastAPI / Python) → copy the DSN → set
+`SENTRY_DSN=https://…@…sentry.io/…` on both Railway services (api + worker).
+The Celery integration is not yet wired — add `sentry_sdk.integrations.celery.CeleryIntegration`
+in `app/tasks/celery_app.py` if you also want worker errors captured.
 
 ## 6. Launch checklist
 
