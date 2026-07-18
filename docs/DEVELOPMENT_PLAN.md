@@ -126,7 +126,7 @@ The software is done when every box below is checked. Everything in this plan tr
 
 ---
 
-## Current state at a glance (updated 2026-07-12; launch-readiness branch)
+## Current state at a glance (updated 2026-07-18; launch-readiness merged to main)
 
 | Area | State | Remaining gaps |
 |---|---|---|
