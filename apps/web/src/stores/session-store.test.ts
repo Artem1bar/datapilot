@@ -6,6 +6,7 @@ beforeEach(() => {
     sessions: [],
     activeSessionId: null,
     messagesBySession: {},
+    activeCleaningJobsBySession: {},
     workflowStateBySession: {},
   });
 });
@@ -251,5 +252,52 @@ describe("createMessage", () => {
   it("generates unique ids", () => {
     const ids = Array.from({ length: 20 }, () => createMessage("user", "x").id);
     expect(new Set(ids).size).toBe(20);
+  });
+});
+
+/* ── Active cleaning jobs (re-attach after refresh) ────────────────────── */
+
+describe("SessionStore — active cleaning jobs", () => {
+  const job = {
+    jobId: "job-1",
+    datasetId: "ds-1",
+    datasetFilename: "orders.csv",
+    progressMessageId: "msg-1",
+    rowsBefore: 100,
+    steps: [{ operation: "deduplicate", column: null, params: {}, description: "Remove duplicate rows" }],
+    startedAt: "2026-07-09T00:00:00.000Z",
+  };
+
+  it("registerCleaningJob stores the job keyed by session", () => {
+    const id = useSessionStore.getState().createSession();
+    useSessionStore.getState().registerCleaningJob(id, job);
+    expect(useSessionStore.getState().activeCleaningJobsBySession[id]).toEqual(job);
+  });
+
+  it("clearCleaningJob removes only that session's job", () => {
+    const a = useSessionStore.getState().createSession();
+    const b = useSessionStore.getState().createSession();
+    useSessionStore.getState().registerCleaningJob(a, job);
+    useSessionStore.getState().registerCleaningJob(b, { ...job, jobId: "job-2" });
+    useSessionStore.getState().clearCleaningJob(a);
+    const state = useSessionStore.getState();
+    expect(state.activeCleaningJobsBySession[a]).toBeUndefined();
+    expect(state.activeCleaningJobsBySession[b]?.jobId).toBe("job-2");
+  });
+
+  it("deleteSession discards that session's active job", () => {
+    const id = useSessionStore.getState().createSession();
+    useSessionStore.getState().registerCleaningJob(id, job);
+    useSessionStore.getState().deleteSession(id);
+    expect(useSessionStore.getState().activeCleaningJobsBySession[id]).toBeUndefined();
+  });
+
+  it("persists active jobs so a refresh can re-attach (partialize)", () => {
+    const id = useSessionStore.getState().createSession();
+    useSessionStore.getState().registerCleaningJob(id, job);
+    const persisted = JSON.parse(
+      localStorage.getItem("datatiger-sessions") ?? "{}",
+    ) as { state?: { activeCleaningJobsBySession?: Record<string, unknown> } };
+    expect(persisted.state?.activeCleaningJobsBySession?.[id]).toBeTruthy();
   });
 });

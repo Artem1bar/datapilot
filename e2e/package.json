@@ -1,0 +1,14 @@
+{
+  "name": "@datapilot/e2e",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Playwright end-to-end tests: full stack with a stubbed Anthropic API",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.0"
+  }
+}

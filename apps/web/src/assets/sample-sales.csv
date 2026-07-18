@@ -1,0 +1,16 @@
+order_id,customer,email,product,quantity,unit_price,order_date,region,notes
+5001,Maya Patel,maya.patel@example.com,Laptop Stand,2,34.99,2026-05-01,North,
+5002,  james wong ,JAMES.WONG@EXAMPLE.COM,USB-C Hub,1,49.50,2026-05-02,south,rush
+5003,Sofia Reyes,sofia.reyes@example.com,Monitor 27",1,229.00,05/03/2026,East,
+5004,Liam O'Brien,liam.obrien@example.com,Keyboard,,79.99,2026-05-04,WEST,gift
+5005,Maya Patel,maya.patel@example.com,Laptop Stand,2,34.99,2026-05-01,North,
+5006,Chen Wei,chen.wei@example.com,Webcam,3,59.00,2026-05-05,north,
+5007,,orders@example.com,Mouse,1,,2026-05-06,South,phone order
+5008,Ana Silva,ana.silva@example.com,Desk Mat,4,19.99,2026-05-07,east,
+5009,Tom Baker,tom.baker@example.com,Headset,850,89.00,2026-05-08,West,bulk?
+5010,Nina Ali,nina.ali@example.com,Laptop Stand,1,-12.00,2026-05-09,North,refund
+5011,Raj Kumar,raj.kumar@example.com,USB-C Hub,2,49.50,2026-05-10,SOUTH,
+5012,  Emma Davis,emma.davis@example.com,Monitor 27",1,18500.00,2026-05-11,East,typo?
+5013,Sofia Reyes,sofia.reyes@example.com,Monitor 27",1,229.00,05/03/2026,East,
+5014,Oliver Kim,oliver.kim@example.com,Keyboard,2,,2026-05-12,West,
+5015,Lucia Rossi,lucia.rossi@example.com,Webcam,1,59.00,2026-05-13,north,

@@ -13,6 +13,8 @@ interface InputBarProps {
   onFileAttach: (file: File) => void;
   onTablePaste: (text: string) => void;
   onChipClick: (text: string) => void;
+  onApplyRecipe?: (recipeId: string) => void;
+  hasDataset?: boolean;
   sending?: boolean;
   disabled?: boolean;
   showChips?: boolean;
@@ -25,6 +27,8 @@ export function InputBar({
   onFileAttach,
   onTablePaste,
   onChipClick,
+  onApplyRecipe,
+  hasDataset = false,
   sending = false,
   disabled = false,
   showChips = true,
@@ -53,6 +57,8 @@ export function InputBar({
         <AttachMenu
           onFileAttach={onFileAttach}
           onTablePaste={onTablePaste}
+          onApplyRecipe={onApplyRecipe}
+          hasDataset={hasDataset}
           disabled={disabled}
         />
 
@@ -79,7 +85,7 @@ export function InputBar({
       </div>
 
       <p className="mt-1.5 text-center text-[11px] text-ink-muted">
-        Data Tiger uses Claude AI. Always verify important results.
+        DataPilot uses Claude AI. Always verify important results.
       </p>
     </div>
   );

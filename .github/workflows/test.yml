@@ -98,7 +98,7 @@ jobs:
         env:
           POSTGRES_USER: test
           POSTGRES_PASSWORD: test
-          POSTGRES_DB: test
+          POSTGRES_DB: datapilot_test
         ports:
           - 5432:5432
         options: >-
@@ -117,8 +117,11 @@ jobs:
           --health-retries 10
 
     env:
-      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/test
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/datapilot_test
       REDIS_URL: redis://localhost:6379/0
+      # Runs the real-services integration suite (tests/integration) alongside
+      # the mocked tests — the services above are what it needs.
+      INTEGRATION_TESTS: "1"
       ANTHROPIC_API_KEY: test-key
       R2_ENDPOINT_URL: http://localhost:9000
       R2_ACCESS_KEY_ID: test
@@ -158,3 +161,102 @@ jobs:
           git fetch --no-tags origin ${{ github.base_ref }} &&
           uv run --with diff-cover diff-cover coverage.xml
           --compare-branch=origin/${{ github.base_ref }} --fail-under=80
+
+  e2e:
+    name: E2E (Playwright)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      # MinIO is NOT a service container: GitHub can't override an image's
+      # command, and minio/minio needs a `server` arg to start. It's run as an
+      # explicit `docker run` step below instead (bitnami/minio:latest was
+      # pulled from Docker Hub in 2025 — "manifest unknown").
+
+    env:
+      E2E_DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/datapilot_e2e
+      E2E_REDIS_URL: redis://localhost:6379/1
+      E2E_DB_SUPERUSER: test
+      PGPASSWORD: test
+      R2_ENDPOINT_URL: http://localhost:9000
+      R2_ACCESS_KEY_ID: e2e-minio
+      R2_SECRET_ACCESS_KEY: e2e-minio-secret
+      R2_BUCKET_NAME: datapilot
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install API dependencies
+        run: uv sync
+        working-directory: apps/api
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Install Playwright browser
+        run: pnpm --filter @datapilot/e2e exec playwright install chromium --with-deps
+
+      - name: Start MinIO and create the bucket
+        run: |
+          docker run -d --name minio -p 9000:9000 \
+            -e MINIO_ROOT_USER=e2e-minio \
+            -e MINIO_ROOT_PASSWORD=e2e-minio-secret \
+            minio/minio:latest server /data
+          for i in $(seq 1 30); do
+            curl -sf http://localhost:9000/minio/health/live && break
+            echo "Waiting for MinIO ($i/30)..."; sleep 2
+          done
+          curl -sf http://localhost:9000/minio/health/live || { echo "MinIO not ready" >&2; exit 1; }
+          docker run --rm --network host --entrypoint sh minio/mc:latest -c \
+            "mc alias set local http://localhost:9000 e2e-minio e2e-minio-secret && mc mb -p local/datapilot"
+
+      - name: Run E2E suite
+        run: pnpm --filter @datapilot/e2e test
+
+      - name: Upload traces on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-traces
+          path: e2e/test-results/
+          retention-days: 7

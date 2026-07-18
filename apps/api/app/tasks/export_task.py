@@ -15,7 +15,9 @@ from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound
 
 from app.config import settings
+from app.services.dataset_versions import pick_effective_r2_key
 from app.services.storage import download_file_bytes, get_s3_client
+from app.tasks._errors import user_facing_error
 from app.tasks.celery_app import celery_app
 from app.utils.dataframe import read_dataframe
 
@@ -72,19 +74,25 @@ def export_dataset(
             result = session.execute(select(Dataset).where(Dataset.id == uuid.UUID(dataset_id)))
             dataset = result.scalar_one()
 
-        # Try to download cleaned version first, fall back to original
-        cleaned_key = dataset.r2_key.rsplit(".", 1)
-        if len(cleaned_key) == 2:
-            cleaned_r2_key = f"{cleaned_key[0]}_cleaned.{cleaned_key[1]}"
-        else:
-            cleaned_r2_key = f"{dataset.r2_key}_cleaned"
-
-        try:
-            file_bytes = download_file_bytes(cleaned_r2_key)
-            logger.info("Using cleaned version for dataset %s", dataset_id)
-        except Exception:
-            file_bytes = download_file_bytes(dataset.r2_key)
-            logger.info("Using original version for dataset %s", dataset_id)
+        # Export whatever currently represents the dataset: the newest
+        # non-reverted clean job's output, or the original upload.
+        with Session(engine) as session:
+            jobs = (
+                session.execute(
+                    select(Job)
+                    .where(
+                        Job.dataset_id == uuid.UUID(dataset_id),
+                        Job.type == "clean",
+                        Job.status == "completed",
+                    )
+                    .order_by(Job.created_at.desc())
+                )
+                .scalars()
+                .all()
+            )
+        effective_key = pick_effective_r2_key(dataset.r2_key, jobs)
+        file_bytes = download_file_bytes(effective_key)
+        logger.info("Exporting %s for dataset %s", effective_key, dataset_id)
 
         _publish_progress_sync(job_id, "running", 30, "Parsing file")
 
@@ -155,7 +163,8 @@ def export_dataset(
             _publish_progress_sync(job_id, "running", 0, f"Transient error — retrying: {exc}")
             raise self.retry(exc=exc, countdown=30)
 
-        _publish_progress_sync(job_id, "failed", 0, str(exc))
+        error_message = user_facing_error(exc)
+        _publish_progress_sync(job_id, "failed", 0, error_message)
 
         with Session(engine) as session:
             session.execute(
@@ -163,7 +172,7 @@ def export_dataset(
                 .where(Job.id == uuid.UUID(job_id))
                 .values(
                     status="failed",
-                    error_text=str(exc),
+                    error_text=error_message,
                     completed_at=datetime.now(UTC),
                 )
             )

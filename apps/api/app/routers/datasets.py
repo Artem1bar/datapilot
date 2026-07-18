@@ -25,6 +25,7 @@ from app.schemas import (
     UploadUrlRequest,
     UploadUrlResponse,
 )
+from app.services.dataset_versions import pick_effective_r2_key
 from app.services.storage import (
     create_presigned_upload_url,
     delete_object,
@@ -493,7 +494,10 @@ async def get_history(
         }
         if job.result_json:
             entry["summary"] = {
-                "rows_before": job.result_json.get("rows_before"),
+                # The clean task stores the pre-clean count as "original_rows".
+                "rows_before": job.result_json.get(
+                    "original_rows", job.result_json.get("rows_before")
+                ),
                 "rows_after": job.result_json.get("cleaned_rows"),
                 "cells_modified": job.result_json.get("cells_modified"),
             }
@@ -520,7 +524,6 @@ async def download_dataset(
     if dataset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
 
-    r2_key = dataset.r2_key
     jobs_result = await db.execute(
         select(Job)
         .where(
@@ -530,11 +533,8 @@ async def download_dataset(
             Job.status == "completed",
         )
         .order_by(Job.created_at.desc())
-        .limit(1)
     )
-    clean_job = jobs_result.scalar_one_or_none()
-    if clean_job and clean_job.result_json and clean_job.result_json.get("cleaned_r2_key"):
-        r2_key = clean_job.result_json["cleaned_r2_key"]
+    r2_key = pick_effective_r2_key(dataset.r2_key, jobs_result.scalars().all())
 
     try:
         file_bytes = await asyncio.to_thread(download_file_bytes, r2_key)

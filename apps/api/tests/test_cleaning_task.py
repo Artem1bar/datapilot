@@ -518,3 +518,58 @@ class TestRemediationStalled:
         from app.tasks.cleaning_task import _remediation_stalled
 
         assert _remediation_stalled({"a", "c"}, {"a"}, True) is True
+
+
+class TestCleanedCsvIsParseable:
+    """Live QA (2026-07-09): the CSV output used to append the audit log
+    in-band ('# Cleaning Legend' trailer), which broke pandas/Excel re-reads
+    of the cleaned file. The legend belongs in result_json + the Excel sheet,
+    never inside the CSV data."""
+
+    def test_csv_output_has_no_inband_legend(self):
+        import io
+
+        import pandas as pd
+
+        from app.tasks.cleaning_task import _dataframe_to_bytes
+
+        df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+        audit = [
+            {
+                "row": 1,
+                "column": "a",
+                "original_value": " 1",
+                "new_value": 1,
+                "operation": "strip_whitespace",
+                "rule": "Rule 1",
+            }
+        ]
+        data, content_type = _dataframe_to_bytes(df, "orders.csv", audit_log=audit)
+
+        assert content_type == "text/csv"
+        assert b"Cleaning Legend" not in data
+        parsed = pd.read_csv(io.BytesIO(data))
+        assert list(parsed.columns) == ["a", "b"]
+        assert len(parsed) == 2
+
+
+class TestMakeCleanedKey:
+    """Each clean job must write to its own storage object. A key derived
+    only from the original upload key means every re-clean of a dataset
+    overwrites the previous cleaned file — so 'revert to the previous
+    version' could silently serve the wrong bytes (live QA 2026-07-09)."""
+
+    def test_key_is_unique_per_job(self):
+        from app.tasks.cleaning_task import _make_cleaned_key
+
+        a = _make_cleaned_key("uploads/u/orders.csv", "job-a")
+        b = _make_cleaned_key("uploads/u/orders.csv", "job-b")
+        assert a != b
+
+    def test_key_keeps_extension_and_marker(self):
+        from app.tasks.cleaning_task import _make_cleaned_key
+
+        key = _make_cleaned_key("uploads/u/orders.xlsx", "1234job")
+        assert key.endswith(".xlsx")
+        assert "_cleaned" in key
+        assert "1234job"[:8] in key

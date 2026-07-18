@@ -127,7 +127,7 @@ class TestDownloadDataset:
         dataset = _make_dataset()
         clean_job = MagicMock()
         clean_job.result_json = {"cleaned_r2_key": "uploads/u/data_cleaned.csv"}
-        db = _db_returning(dataset, clean_job)
+        db = _db_returning(dataset, [clean_job])
 
         with patch(
             "app.routers.datasets.download_file_bytes", return_value=b"csvbytes"

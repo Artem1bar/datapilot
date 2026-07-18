@@ -11,6 +11,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine
 
 from app.config import settings
+from app.utils.json import dumps_json
 
 _engine: Engine | None = None
 
@@ -23,5 +24,7 @@ def get_sync_engine() -> Engine:
             sync_url = settings.DATABASE_URL.replace("asyncpg", "psycopg2")
         else:
             sync_url = settings.DATABASE_URL
-        _engine = create_engine(sync_url, pool_pre_ping=True)
+        # dumps_json: DataFrame-derived result payloads can hold pandas/numpy
+        # scalars (e.g. Timestamp after a datetime cast) that stdlib json rejects.
+        _engine = create_engine(sync_url, pool_pre_ping=True, json_serializer=dumps_json)
     return _engine

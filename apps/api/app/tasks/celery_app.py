@@ -34,6 +34,17 @@ def create_celery_app() -> Celery:
                 "task": "cleanup_orphaned_storage",
                 "schedule": 24 * 60 * 60,  # once a day
             },
+            "purge-expired-exports-daily": {
+                "task": "purge_expired_exports",
+                "schedule": 24 * 60 * 60,  # once a day
+            },
+            # Fail jobs orphaned by a worker crash/restart so clients stop
+            # polling; Redis may still redeliver the task later (acks_late),
+            # in which case the job simply completes on the second attempt.
+            "reap-stale-jobs": {
+                "task": "reap_stale_jobs",
+                "schedule": 10 * 60,  # every 10 minutes
+            },
         },
     )
 

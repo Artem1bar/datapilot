@@ -19,7 +19,7 @@ from app.models.job import Job
 from app.schemas import CleaningStep, JobResponse, VerificationResult
 from app.schemas.settings import merge_preferences
 from app.services.storage import download_file_bytes
-from app.utils.dataframe import read_dataframe, to_sample_records
+from app.utils.dataframe import read_dataframe, strip_legacy_csv_legend, to_sample_records
 
 logger = logging.getLogger(__name__)
 
@@ -359,6 +359,105 @@ async def download_cleaned_file(
             "Content-Length": str(len(file_bytes)),
         },
     )
+
+
+async def _get_completed_clean_job(job_id: uuid.UUID, user: CurrentUser, db: DBSession) -> Job:
+    """Fetch an owned, completed clean job or raise the matching HTTP error."""
+    result = await db.execute(
+        select(Job).where(Job.id == job_id, Job.user_id == user.id, Job.type == "clean")
+    )
+    job = result.scalar_one_or_none()
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cleaning job not found")
+    if job.status != "completed":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Cleaning job is not completed (status: {job.status})",
+        )
+    return job
+
+
+@router.post("/{job_id}/revert", status_code=status.HTTP_200_OK)
+async def revert_cleaning(
+    job_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBSession,
+) -> dict:
+    """Revert a cleaning: downloads go back to the pre-clean file.
+
+    Cleaning never mutates the original file — it writes a cleaned copy that
+    download endpoints substitute in. Reverting marks this job so the
+    substitution skips it (falling back to an earlier clean, or the original).
+    Idempotent: reverting an already-reverted job is a no-op.
+    """
+    job = await _get_completed_clean_job(job_id, user, db)
+
+    if not (job.result_json or {}).get("reverted"):
+        # Reassign (don't mutate) so SQLAlchemy detects the JSONB change.
+        job.result_json = {**(job.result_json or {}), "reverted": True}
+        await db.commit()
+
+    return {
+        "job_id": str(job.id),
+        "reverted": True,
+        "message": "Cleaning reverted — downloads now use the previous version of this dataset.",
+    }
+
+
+@router.get("/{job_id}/comparison", status_code=status.HTTP_200_OK)
+async def get_cleaning_comparison(
+    job_id: uuid.UUID,
+    user: CurrentUser,
+    db: DBSession,
+) -> dict:
+    """Diff the dataset's original file against this clean job's output.
+
+    Returns the same report shape as POST /datasets/{id}/compare/{other_id},
+    with `datasets.after.id` set to the clean job id (there is no second
+    dataset row — the cleaned file only exists in storage).
+    """
+    job = await _get_completed_clean_job(job_id, user, db)
+
+    cleaned_key = (job.result_json or {}).get("cleaned_r2_key")
+    if not cleaned_key:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Cleaned file key not found in job result",
+        )
+
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == job.dataset_id, Dataset.user_id == user.id)
+    )
+    dataset = result.scalar_one_or_none()
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+
+    from app.services.comparison import compare_datasets
+
+    try:
+        before_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
+        after_bytes = await asyncio.to_thread(download_file_bytes, cleaned_key)
+    except Exception:
+        logger.exception("Failed to download files for comparison (job %s)", job_id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to retrieve files from storage.",
+        )
+
+    # Parse + diff off the event loop (pandas is CPU-bound and files can be
+    # up to MAX_UPLOAD_BYTES) — mirrors POST /datasets/{id}/compare/{other}.
+    df_before = await asyncio.to_thread(read_dataframe, before_bytes, dataset.filename)
+    # Cleaned CSVs written before 2026-07-09 carry an in-band audit trailer.
+    df_after = await asyncio.to_thread(
+        read_dataframe, strip_legacy_csv_legend(after_bytes), cleaned_key.split("/")[-1]
+    )
+
+    report = await asyncio.to_thread(compare_datasets, df_before, df_after)
+    report["datasets"] = {
+        "before": {"id": str(dataset.id), "filename": dataset.filename},
+        "after": {"id": str(job.id), "filename": cleaned_key.split("/")[-1]},
+    }
+    return report
 
 
 @router.get("/{job_id}/verification", status_code=status.HTTP_200_OK)

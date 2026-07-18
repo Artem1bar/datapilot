@@ -37,6 +37,8 @@ dependencies = [
     "python-pptx>=1.0.0",
     # Fuzzy matching
     "rapidfuzz>=3.10.0",
+    # Error tracking
+    "sentry-sdk[fastapi]>=2.0.0",
     # Data profiling
     "numpy>=2.0.0",
     # WebSocket
