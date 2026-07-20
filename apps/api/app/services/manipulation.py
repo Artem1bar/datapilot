@@ -99,7 +99,10 @@ def parse_manipulation_intent(
         ],
     )
 
-    text = response.content[0].text.strip()
+    text_block = next((b for b in response.content if hasattr(b, "text")), None)
+    if text_block is None:
+        raise ManipulationError("No text content in AI response")
+    text = text_block.text.strip()
     # Strip markdown fences if present
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]

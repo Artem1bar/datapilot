@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 
@@ -24,8 +26,8 @@ class Dataset(Base):
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # Relationships
-    user: Mapped["User"] = relationship(back_populates="datasets")  # noqa: F821
-    jobs: Mapped[list["Job"]] = relationship(back_populates="dataset")  # noqa: F821
-    chat_sessions: Mapped[list["ChatSession"]] = relationship(  # noqa: F821
+    user: Mapped[User] = relationship(back_populates="datasets")  # noqa: F821
+    jobs: Mapped[list[Job]] = relationship(back_populates="dataset")  # noqa: F821
+    chat_sessions: Mapped[list[ChatSession]] = relationship(  # noqa: F821
         back_populates="dataset", cascade="all, delete-orphan"
     )

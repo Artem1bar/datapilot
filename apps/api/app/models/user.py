@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 from typing import Any
@@ -24,7 +26,7 @@ class User(Base):
     )
 
     # Relationships
-    datasets: Mapped[list["Dataset"]] = relationship(  # noqa: F821
+    datasets: Mapped[list[Dataset]] = relationship(  # noqa: F821
         back_populates="user", cascade="all, delete-orphan"
     )
-    jobs: Mapped[list["Job"]] = relationship(back_populates="user")  # noqa: F821
+    jobs: Mapped[list[Job]] = relationship(back_populates="user")  # noqa: F821

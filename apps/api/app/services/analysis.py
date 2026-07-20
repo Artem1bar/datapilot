@@ -109,7 +109,10 @@ def analyze_data(
             ],
             messages=messages,
         )
-        raw_text = response.content[0].text
+        text_block = next((b for b in response.content if hasattr(b, "text")), None)
+        if text_block is None:
+            raise ValueError("No text content in AI response")
+        raw_text = text_block.text
     except Exception:
         logger.exception("Claude API call failed")
         return {

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import uuid
 from datetime import datetime
 
@@ -19,4 +21,4 @@ class ChatSession(Base):
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    dataset: Mapped["Dataset"] = relationship(back_populates="chat_sessions")  # noqa: F821
+    dataset: Mapped[Dataset] = relationship(back_populates="chat_sessions")  # noqa: F821

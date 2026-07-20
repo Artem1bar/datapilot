@@ -381,7 +381,8 @@ async def preview_data(
                 numeric_val = pd.to_numeric(val, errors="coerce")
                 if numeric_val is not None and not pd.isna(numeric_val):
                     q75 = (
-                        dataset.profile_json.get("columns", {})
+                        (dataset.profile_json or {})
+                        .get("columns", {})
                         .get(col, {})
                         .get("q75", float("inf"))
                     )
