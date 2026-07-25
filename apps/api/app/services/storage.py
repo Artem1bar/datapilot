@@ -7,13 +7,15 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from typing import Any
+
 import boto3
 from botocore.config import Config as BotoConfig
 
 from app.config import settings
 
 
-def _build_s3_client():
+def _build_s3_client() -> Any:
     return boto3.client(
         "s3",
         endpoint_url=settings.R2_ENDPOINT_URL,
@@ -24,10 +26,10 @@ def _build_s3_client():
     )
 
 
-_client = None
+_client: Any = None
 
 
-def get_s3_client():
+def get_s3_client() -> Any:
     global _client
     if _client is None:
         _client = _build_s3_client()
