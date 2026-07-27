@@ -118,9 +118,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**645 tests total** (504 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
+**669 tests total** (528 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (517 tests) — run from `apps/api/`
+### Backend (541 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
