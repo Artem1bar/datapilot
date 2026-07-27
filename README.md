@@ -118,9 +118,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**669 tests total** (528 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
+**687 tests total** (546 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (541 tests) — run from `apps/api/`
+### Backend (559 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -164,6 +164,8 @@ uv run pytest
 | `test_json_serialization.py` / `test_task_errors.py` | Pandas/numpy-safe JSONB serialization; user-facing job error messages |
 | `test_cleaning_revert_compare.py` / `test_dataset_versions.py` | Cleaning revert, before/after comparison, effective-file selection |
 | `tests/integration/` | Real Postgres/Redis round-trips (CRUD, ownership, Celery task) — `INTEGRATION_TESTS=1` |
+| `test_cleaning_router_http.py` | HTTP-layer tests for cleaning router — UUID validation, body validation, 404 propagation |
+| `test_manipulation_router_http.py` | HTTP-layer tests for manipulation router — UUID validation, body validation, 404 propagation |
 | `test_app_boot.py` | App wiring smoke test — routers mounted, middleware installed |
 
 ### Frontend (128 tests) — run from `apps/web/`
