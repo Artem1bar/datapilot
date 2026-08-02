@@ -72,7 +72,7 @@ def request_tool_call(
                 messages=messages,
                 tools=[tool],
                 tool_choice={"type": "tool", "name": tool_name},
-            )
+            )  # type: ignore[call-overload]
             break
         except RateLimitError:
             if attempt < rate_limit_retries - 1:
