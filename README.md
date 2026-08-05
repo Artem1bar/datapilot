@@ -107,14 +107,22 @@ The app will be available at `http://localhost:5173`.
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Claude API key for the AI cleaning agent |
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL asyncpg connection string |
 | `REDIS_URL` | Redis connection string |
 | `R2_ENDPOINT_URL` | MinIO/R2 endpoint for file storage |
 | `R2_ACCESS_KEY_ID` | Storage access key |
 | `R2_SECRET_ACCESS_KEY` | Storage secret key |
+| `R2_BUCKET_NAME` | Storage bucket name (default: `datapilot`) |
+| `CLERK_SECRET_KEY` | Clerk backend secret key (production auth) |
+| `CLERK_PUBLISHABLE_KEY` | Clerk backend publishable key |
+| `VITE_CLERK_PUBLISHABLE_KEY` | Clerk publishable key for the frontend build |
 | `CLERK_JWT_ISSUER` | Clerk Frontend API URL / JWT issuer (production auth) |
 | `CLERK_WEBHOOK_SECRET` | Svix signing secret for Clerk user-sync webhooks |
 | `DEV_AUTH_BYPASS` | `true` locally to skip auth; ignored in production |
+| `MAX_UPLOAD_BYTES` | Max file upload size in bytes (default: `52428800` = 50 MB) |
+| `CORS_ORIGINS` | Comma-separated allowed origins (e.g. `http://localhost:5174`) |
+| `VITE_API_URL` | Production API base URL (leave blank for local dev) |
+| `ENVIRONMENT` | `development` / `staging` / `production` (production enforces auth) |
 
 ## Tests
 
