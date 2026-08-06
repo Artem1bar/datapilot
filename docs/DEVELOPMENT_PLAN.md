@@ -126,7 +126,7 @@ The software is done when every box below is checked. Everything in this plan tr
 
 ---
 
-## Current state at a glance (updated 2026-07-18; launch-readiness merged to main)
+## Current state at a glance (updated 2026-08-05)
 
 | Area | State | Remaining gaps |
 |---|---|---|
@@ -140,6 +140,25 @@ The software is done when every box below is checked. Everything in this plan tr
 | Observability | ⚠️ Structured logs + Sentry code done | Set `SENTRY_DSN` env var at deploy time to activate |
 | Test infrastructure (Phase 5) | ✅ Done | — (integration suite + Playwright E2E in CI) |
 | Launch (Phase 6) | ⚠️ Code done, provisioning blocked | Railway/R2/Clerk credentials, Sentry DSN, final checklist run |
+
+## Progress log — post-launch-readiness (main, 2026-07-18 → 2026-08-05)
+
+Incremental quality hardening committed to main. No merges from branches; all work directly on main.
+
+**Type safety & linting (2026-07-27 → 2026-08-02):**
+- ✅ Fixed PEP 563 `from __future__ import annotations` model annotation issue; safe Anthropic response text extraction; guarded `None` profile_json (commit `9f608e1`)
+- ✅ Added type params to 22 bare `dict`/`list` signatures in `cleaning.py` — eliminates 12 mypy type-arg errors (commit `30857cd`)
+- ✅ Added return type annotations to all `storage.py` S3 client functions (commit `3014bf2`)
+- ✅ Silenced a mypy `call-overload` error on the Anthropic client `messages.create` call (commit `dd9eada`)
+- ✅ Fixed `ruff I001` import sort in `storage.py` (commit `993edfc`)
+
+**HTTP-layer tests (2026-07-27 → 2026-08-05):**
+- ✅ 18 HTTP-layer tests for cleaning router (`test_cleaning_router_http.py`): UUID validation, body validation, 404 propagation (commit `33ad7c7`)
+- ✅ 18 HTTP-layer tests for manipulation router (`test_manipulation_router_http.py`): UUID validation, body validation, 404 propagation (commit `3d7c104`)
+- Test count: backend 523 → 559 (mocked: 523+36=559 total mocked; integration 13; **total backend 559, overall 687**)
+
+**Docs (2026-08-05):**
+- ✅ Added missing env vars to README table; replaced Vite boilerplate in `apps/web/README.md` with real setup instructions (commit `51e76de`)
 
 ---
 
