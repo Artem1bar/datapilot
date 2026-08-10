@@ -1,9 +1,13 @@
-"""Unit tests for pure helper functions in the analysis service."""
+"""Unit tests for pure helper functions in the analysis service and router."""
 
 from __future__ import annotations
 
+import io
 import json
 
+import pandas as pd
+
+from app.routers.analysis import _read_sample_rows
 from app.services.analysis import _build_dataset_context, _extract_json
 
 
@@ -53,7 +57,7 @@ class TestExtractJson:
         assert result == {}
 
     def test_code_fence_with_trailing_text(self):
-        text = "Analysis:\n```json\n{\"answer\": \"yes\"}\n```\nEnd."
+        text = 'Analysis:\n```json\n{"answer": "yes"}\n```\nEnd.'
         result = _extract_json(text)
         assert result is not None
         assert result["answer"] == "yes"
@@ -90,7 +94,70 @@ class TestBuildDatasetContext:
 
     def test_non_serializable_values_handled(self):
         import datetime
+
         profile = {"created": datetime.date(2024, 1, 1)}
         rows = []
         ctx = _build_dataset_context(profile, rows)
         assert "2024-01-01" in ctx
+
+
+# ---------------------------------------------------------------------------
+# _read_sample_rows  (router utility, no I/O — reads from bytes)
+# ---------------------------------------------------------------------------
+
+
+def _csv_bytes(df: pd.DataFrame) -> bytes:
+    return df.to_csv(index=False).encode()
+
+
+def _excel_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    df.to_excel(buf, index=False)
+    return buf.getvalue()
+
+
+def _parquet_bytes(df: pd.DataFrame) -> bytes:
+    buf = io.BytesIO()
+    df.to_parquet(buf, index=False)
+    return buf.getvalue()
+
+
+class TestReadSampleRows:
+    def test_csv_returns_list_of_dicts(self):
+        df = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
+        rows = _read_sample_rows(_csv_bytes(df), "data.csv")
+        assert isinstance(rows, list)
+        assert rows[0]["a"] == 1
+        assert rows[0]["b"] == "x"
+
+    def test_csv_capped_at_n_rows(self):
+        df = pd.DataFrame({"v": range(50)})
+        rows = _read_sample_rows(_csv_bytes(df), "big.csv", n=10)
+        assert len(rows) == 10
+
+    def test_excel_round_trip(self):
+        df = pd.DataFrame({"name": ["Alice", "Bob"], "score": [90, 85]})
+        rows = _read_sample_rows(_excel_bytes(df), "report.xlsx")
+        assert rows[0]["name"] == "Alice"
+        assert rows[1]["score"] == 85
+
+    def test_xls_extension_treated_as_excel(self):
+        df = pd.DataFrame({"val": [42]})
+        rows = _read_sample_rows(_excel_bytes(df), "legacy.xls")
+        assert rows[0]["val"] == 42
+
+    def test_parquet_round_trip(self):
+        df = pd.DataFrame({"x": [10, 20, 30]})
+        rows = _read_sample_rows(_parquet_bytes(df), "data.parquet", n=2)
+        assert len(rows) == 2
+        assert rows[0]["x"] == 10
+
+    def test_unknown_extension_falls_back_to_csv(self):
+        df = pd.DataFrame({"k": ["hello"]})
+        rows = _read_sample_rows(_csv_bytes(df), "mystery.txt")
+        assert rows[0]["k"] == "hello"
+
+    def test_empty_dataframe_returns_empty_list(self):
+        df = pd.DataFrame({"col": pd.Series([], dtype="object")})
+        rows = _read_sample_rows(_csv_bytes(df), "empty.csv")
+        assert rows == []
