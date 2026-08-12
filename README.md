@@ -126,9 +126,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**726 tests total** (585 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
+**737 tests total** (596 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (598 tests) — run from `apps/api/`
+### Backend (609 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -146,6 +146,7 @@ uv run pytest
 | `test_analysis.py` | Chat-based AI data analysis, visualization helpers, `_read_sample_rows` format branches |
 | `test_dictionary.py` | AI data dictionary generation |
 | `test_exports_router_http.py` | Export job creation, presigned download URL, 404/400/500 paths |
+| `test_analysis_router_http.py` | Chat session listing and retrieval HTTP endpoints (list, get, 404) |
 | `test_recipes.py` | Cleaning recipe save, load, and apply |
 | `test_export.py` | CSV/Excel/Parquet export jobs |
 | `test_storage.py` | File storage (upload, download, delete) |
