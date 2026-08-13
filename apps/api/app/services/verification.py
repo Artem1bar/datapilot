@@ -21,9 +21,11 @@ logger = logging.getLogger(__name__)
 # Result dataclasses (frozen / immutable)
 # ---------------------------------------------------------------------------
 
+
 @dataclass(frozen=True)
 class StepVerification:
     """Verification result for a single cleaning step."""
+
     step_index: int
     operation: str
     column: str | None
@@ -36,6 +38,7 @@ class StepVerification:
 @dataclass(frozen=True)
 class VerificationReport:
     """Full verification report for a cleaning job."""
+
     overall_passed: bool
     flags_before: dict[str, Any]
     flags_after: dict[str, Any]
@@ -63,9 +66,25 @@ _VAGUE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _NUMBER_WORDS = {
-    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight",
-    "nine", "ten", "eleven", "twelve", "twenty", "thirty", "forty", "fifty",
-    "hundred", "thousand",
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "hundred",
+    "thousand",
 }
 
 
@@ -73,37 +92,56 @@ _NUMBER_WORDS = {
 # Per-operation postcondition validators
 # ---------------------------------------------------------------------------
 
+
 def _validate_remove_currency_symbols(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="remove_currency_symbols", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="remove_currency_symbols",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
     matches = df[column].astype(str).str.contains(r"[$€£¥₹]", regex=True, na=False)
     bad_count = int(matches.sum())
     return StepVerification(
-        step_index=-1, operation="remove_currency_symbols", column=column,
+        step_index=-1,
+        operation="remove_currency_symbols",
+        column=column,
         passed=bad_count == 0,
         expected="0 cells with currency symbols",
         actual=f"{bad_count} cells still contain currency symbols",
-        remaining_issues=tuple(df[column][matches].head(5).astype(str).tolist()) if bad_count else (),
+        remaining_issues=tuple(df[column][matches].head(5).astype(str).tolist())
+        if bad_count
+        else (),
     )
 
 
 def _validate_free_to_zero(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="free_to_zero", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="free_to_zero",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
     mask = df[column].astype(str).str.strip().str.lower().str.startswith("free")
     bad_count = int(mask.sum())
     return StepVerification(
-        step_index=-1, operation="free_to_zero", column=column,
+        step_index=-1,
+        operation="free_to_zero",
+        column=column,
         passed=bad_count == 0,
         expected="0 cells starting with 'free'",
         actual=f"{bad_count} cells still start with 'free'",
@@ -112,19 +150,27 @@ def _validate_free_to_zero(
 
 
 def _validate_extract_number(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="extract_number", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="extract_number",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
     numeric = pd.to_numeric(df[column], errors="coerce")
     non_null = df[column].notna().sum()
     numeric_count = numeric.notna().sum()
     pct = float(numeric_count / non_null * 100) if non_null > 0 else 100.0
     return StepVerification(
-        step_index=-1, operation="extract_number", column=column,
+        step_index=-1,
+        operation="extract_number",
+        column=column,
         passed=bool(pct >= 90.0),
         expected=">=90% of non-null values are numeric",
         actual=f"{pct:.1f}% are numeric ({numeric_count}/{non_null})",
@@ -132,18 +178,26 @@ def _validate_extract_number(
 
 
 def _validate_convert_number_words(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="convert_number_words", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="convert_number_words",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
     lower_vals = df[column].astype(str).str.lower().str.strip()
     mask = lower_vals.isin(_NUMBER_WORDS)
     bad_count = int(mask.sum())
     return StepVerification(
-        step_index=-1, operation="convert_number_words", column=column,
+        step_index=-1,
+        operation="convert_number_words",
+        column=column,
         passed=bad_count == 0,
         expected="0 cells with number words",
         actual=f"{bad_count} cells still contain number words",
@@ -152,25 +206,35 @@ def _validate_convert_number_words(
 
 
 def _validate_remove_vague_entries(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="remove_vague_entries", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="remove_vague_entries",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
     non_null = df[column].dropna()
     if len(non_null) == 0:
         return StepVerification(
-            step_index=-1, operation="remove_vague_entries", column=column,
-            passed=True, expected="All null (no vague entries)", actual="Column is all null",
+            step_index=-1,
+            operation="remove_vague_entries",
+            column=column,
+            passed=True,
+            expected="All null (no vague entries)",
+            actual="Column is all null",
         )
-    mask = non_null.astype(str).str.strip().apply(
-        lambda v: bool(_VAGUE_PATTERN.match(v))
-    )
+    mask = non_null.astype(str).str.strip().apply(lambda v: bool(_VAGUE_PATTERN.match(v)))
     bad_count = int(mask.sum())
     return StepVerification(
-        step_index=-1, operation="remove_vague_entries", column=column,
+        step_index=-1,
+        operation="remove_vague_entries",
+        column=column,
         passed=bad_count == 0,
         expected="0 cells with vague entries",
         actual=f"{bad_count} cells still contain vague entries",
@@ -179,12 +243,18 @@ def _validate_remove_vague_entries(
 
 
 def _validate_cast_type(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="cast_type", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="cast_type",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
     target = params.get("target_type", "")
     dtype_name = str(df[column].dtype)
@@ -197,7 +267,9 @@ def _validate_cast_type(
     expected_dtypes = type_map.get(target, set())
     passed = dtype_name in expected_dtypes or target in dtype_name
     return StepVerification(
-        step_index=-1, operation="cast_type", column=column,
+        step_index=-1,
+        operation="cast_type",
+        column=column,
         passed=passed,
         expected=f"dtype should be {target} (one of {expected_dtypes})",
         actual=f"dtype is {dtype_name}",
@@ -205,13 +277,18 @@ def _validate_cast_type(
 
 
 def _validate_drop_rows(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
-    *, original_row_count: int,
+    df: pd.DataFrame,
+    column: str | None,
+    params: dict[str, Any],
+    *,
+    original_row_count: int,
 ) -> StepVerification:
     indices = params.get("indices", [])
     if not indices:
         return StepVerification(
-            step_index=-1, operation="drop_rows", column=column,
+            step_index=-1,
+            operation="drop_rows",
+            column=column,
             passed=True,
             expected="No indices to drop",
             actual="No indices specified",
@@ -222,7 +299,9 @@ def _validate_drop_rows(
     rows_dropped = original_row_count - len(df)
     passed = rows_dropped >= len(indices)
     return StepVerification(
-        step_index=-1, operation="drop_rows", column=column,
+        step_index=-1,
+        operation="drop_rows",
+        column=column,
         passed=passed,
         expected=f"At least {len(indices)} rows dropped",
         actual=f"{rows_dropped} total rows dropped ({original_row_count} -> {len(df)})",
@@ -230,22 +309,36 @@ def _validate_drop_rows(
 
 
 def _validate_strip_whitespace(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="strip_whitespace", column=column,
-            passed=True, expected="Column absent (skipped)", actual="Column absent",
+            step_index=-1,
+            operation="strip_whitespace",
+            column=column,
+            passed=True,
+            expected="Column absent (skipped)",
+            actual="Column absent",
         )
-    if not pd.api.types.is_string_dtype(df[column]) and not pd.api.types.is_object_dtype(df[column]):
+    if not pd.api.types.is_string_dtype(df[column]) and not pd.api.types.is_object_dtype(
+        df[column]
+    ):
         return StepVerification(
-            step_index=-1, operation="strip_whitespace", column=column,
-            passed=True, expected="Non-string column (skipped)", actual=f"dtype={df[column].dtype}",
+            step_index=-1,
+            operation="strip_whitespace",
+            column=column,
+            passed=True,
+            expected="Non-string column (skipped)",
+            actual=f"dtype={df[column].dtype}",
         )
     has_ws = df[column].dropna().apply(lambda v: str(v) != str(v).strip())
     bad_count = int(has_ws.sum())
     return StepVerification(
-        step_index=-1, operation="strip_whitespace", column=column,
+        step_index=-1,
+        operation="strip_whitespace",
+        column=column,
         passed=bad_count == 0,
         expected="0 cells with leading/trailing whitespace",
         actual=f"{bad_count} cells still have whitespace",
@@ -253,12 +346,16 @@ def _validate_strip_whitespace(
 
 
 def _validate_deduplicate(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     subset = params.get("subset")
     dup_count = int(df.duplicated(subset=subset).sum())
     return StepVerification(
-        step_index=-1, operation="deduplicate", column=column,
+        step_index=-1,
+        operation="deduplicate",
+        column=column,
         passed=dup_count == 0,
         expected="0 duplicate rows",
         actual=f"{dup_count} duplicate rows remain",
@@ -266,7 +363,9 @@ def _validate_deduplicate(
 
 
 def _validate_flag_extreme_outliers(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     flag_col = f"{column}_flagged"
     if flag_col not in df.columns:
@@ -281,7 +380,9 @@ def _validate_flag_extreme_outliers(
         if len(numeric) < 4:
             # Too few values to detect outliers — nothing to flag
             return StepVerification(
-                step_index=-1, operation="flag_extreme_outliers", column=column,
+                step_index=-1,
+                operation="flag_extreme_outliers",
+                column=column,
                 passed=True,
                 expected="No outliers to flag (too few values)",
                 actual="No outliers detected",
@@ -296,14 +397,18 @@ def _validate_flag_extreme_outliers(
             has_outliers = (modified_z > 3.5).any()
         if not has_outliers:
             return StepVerification(
-                step_index=-1, operation="flag_extreme_outliers", column=column,
+                step_index=-1,
+                operation="flag_extreme_outliers",
+                column=column,
                 passed=True,
                 expected="No extreme outliers remain (already handled by cap_extreme_values)",
                 actual="No outliers detected — flag column not needed",
             )
 
     return StepVerification(
-        step_index=-1, operation="flag_extreme_outliers", column=column,
+        step_index=-1,
+        operation="flag_extreme_outliers",
+        column=column,
         passed=has_flag,
         expected=f"Flag column '{flag_col}' exists",
         actual=f"Flag column {'exists' if has_flag else 'missing'}",
@@ -311,11 +416,15 @@ def _validate_flag_extreme_outliers(
 
 
 def _validate_noop(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     """Fallback validator for operations without specific postconditions."""
     return StepVerification(
-        step_index=-1, operation="unknown", column=column,
+        step_index=-1,
+        operation="unknown",
+        column=column,
         passed=True,
         expected="No specific postcondition (assumed ok)",
         actual="Skipped validation",
@@ -323,11 +432,15 @@ def _validate_noop(
 
 
 def _validate_clean_column_names(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     dirty = [c for c in df.columns if c != c.strip() or "\xa0" in str(c)]
     return StepVerification(
-        step_index=-1, operation="clean_column_names", column=column,
+        step_index=-1,
+        operation="clean_column_names",
+        column=column,
         passed=len(dirty) == 0,
         expected="0 columns with NBSP or trailing whitespace",
         actual=f"{len(dirty)} columns still have dirty names: {dirty[:3]}",
@@ -335,11 +448,15 @@ def _validate_clean_column_names(
 
 
 def _validate_drop_empty_columns(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     empty = [c for c in df.columns if df[c].isna().all()]
     return StepVerification(
-        step_index=-1, operation="drop_empty_columns", column=column,
+        step_index=-1,
+        operation="drop_empty_columns",
+        column=column,
         passed=len(empty) == 0,
         expected="0 entirely-null columns",
         actual=f"{len(empty)} empty columns remain: {empty[:5]}",
@@ -347,14 +464,20 @@ def _validate_drop_empty_columns(
 
 
 def _validate_drop_incomplete_responses(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     progress_col = params.get("progress_column", "Progress")
     finished_col = params.get("finished_column", "Finished")
     if progress_col not in df.columns:
         return StepVerification(
-            step_index=-1, operation="drop_incomplete_responses", column=column,
-            passed=True, expected="Progress column absent", actual="Column absent",
+            step_index=-1,
+            operation="drop_incomplete_responses",
+            column=column,
+            passed=True,
+            expected="Progress column absent",
+            actual="Column absent",
         )
     prog = pd.to_numeric(df[progress_col], errors="coerce")
     if finished_col in df.columns:
@@ -364,7 +487,9 @@ def _validate_drop_incomplete_responses(
         incomplete = prog < 100
     count = int(incomplete.sum())
     return StepVerification(
-        step_index=-1, operation="drop_incomplete_responses", column=column,
+        step_index=-1,
+        operation="drop_incomplete_responses",
+        column=column,
         passed=count == 0,
         expected="0 incomplete responses",
         actual=f"{count} incomplete responses remain",
@@ -372,24 +497,36 @@ def _validate_drop_incomplete_responses(
 
 
 def _validate_cap_extreme_values(
-    df: pd.DataFrame, column: str, params: dict[str, Any],
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
 ) -> StepVerification:
     if column not in df.columns:
         return StepVerification(
-            step_index=-1, operation="cap_extreme_values", column=column,
-            passed=True, expected="Column absent", actual="Column absent",
+            step_index=-1,
+            operation="cap_extreme_values",
+            column=column,
+            passed=True,
+            expected="Column absent",
+            actual="Column absent",
         )
     max_value = params.get("max_value")
     if max_value is None:
         return StepVerification(
-            step_index=-1, operation="cap_extreme_values", column=column,
-            passed=True, expected="No max_value (skipped)", actual="No max_value param",
+            step_index=-1,
+            operation="cap_extreme_values",
+            column=column,
+            passed=True,
+            expected="No max_value (skipped)",
+            actual="No max_value param",
         )
     numeric = pd.to_numeric(df[column], errors="coerce")
     over = numeric > max_value
     count = int(over.sum())
     return StepVerification(
-        step_index=-1, operation="cap_extreme_values", column=column,
+        step_index=-1,
+        operation="cap_extreme_values",
+        column=column,
         passed=count == 0,
         expected=f"0 values above {max_value}",
         actual=f"{count} values still above {max_value}",
@@ -417,6 +554,7 @@ _VALIDATOR_MAP: dict[str, Any] = {
 # ---------------------------------------------------------------------------
 # Audit log completeness
 # ---------------------------------------------------------------------------
+
 
 def _compute_audit_completeness(
     original_df: pd.DataFrame,
@@ -463,13 +601,15 @@ def _compute_audit_completeness(
         if col_flags.get("has_number_words"):
             flagged_count += int(str_vals.str.lower().str.strip().isin(_NUMBER_WORDS).sum())
         if col_flags.get("has_vague_values"):
-            flagged_count += int(str_vals.str.strip().apply(
-                lambda v: bool(_VAGUE_PATTERN.match(v))
-            ).sum())
+            flagged_count += int(
+                str_vals.str.strip().apply(lambda v: bool(_VAGUE_PATTERN.match(v))).sum()
+            )
         if col_flags.get("has_embedded_text"):
-            flagged_count += int(str_vals.str.contains(
-                r"(?:\d+[\.\d]*\s*[a-zA-Z]+|[a-zA-Z]+\s*\d+[\.\d]*)", regex=True, na=False
-            ).sum())
+            flagged_count += int(
+                str_vals.str.contains(
+                    r"(?:\d+[\.\d]*\s*[a-zA-Z]+|[a-zA-Z]+\s*\d+[\.\d]*)", regex=True, na=False
+                ).sum()
+            )
 
         if flagged_count == 0:
             continue
@@ -487,6 +627,7 @@ def _compute_audit_completeness(
 # ---------------------------------------------------------------------------
 # Main verification entry point
 # ---------------------------------------------------------------------------
+
 
 def verify_cleaning_result(
     original_df: pd.DataFrame,
@@ -527,35 +668,44 @@ def verify_cleaning_result(
 
         # Skip steps that already failed during execution
         if any(fs["step_index"] == i for fs in failed_steps):
-            step_results.append(StepVerification(
-                step_index=i, operation=operation, column=column,
-                passed=False,
-                expected="Step should execute successfully",
-                actual="Step failed during execution",
-            ))
+            step_results.append(
+                StepVerification(
+                    step_index=i,
+                    operation=operation,
+                    column=column,
+                    passed=False,
+                    expected="Step should execute successfully",
+                    actual="Step failed during execution",
+                )
+            )
             continue
 
         validator = _VALIDATOR_MAP.get(operation, _validate_noop)
         if operation == "drop_rows":
-            result = _validate_drop_rows(cleaned_df, column, params,
-                                         original_row_count=original_row_count)
+            result = _validate_drop_rows(
+                cleaned_df, column, params, original_row_count=original_row_count
+            )
         else:
             result = validator(cleaned_df, column, params)
 
         # Patch in the correct step_index
-        step_results.append(StepVerification(
-            step_index=i,
-            operation=result.operation if result.operation != "unknown" else operation,
-            column=result.column,
-            passed=result.passed,
-            expected=result.expected,
-            actual=result.actual,
-            remaining_issues=result.remaining_issues,
-        ))
+        step_results.append(
+            StepVerification(
+                step_index=i,
+                operation=result.operation if result.operation != "unknown" else operation,
+                column=result.column,
+                passed=result.passed,
+                expected=result.expected,
+                actual=result.actual,
+                remaining_issues=result.remaining_issues,
+            )
+        )
 
     # Step C: Audit log completeness
     audit_completeness = _compute_audit_completeness(
-        original_df, original_quality_flags, audit_log,
+        original_df,
+        original_quality_flags,
+        audit_log,
     )
 
     # Determine overall pass
@@ -570,8 +720,7 @@ def verify_cleaning_result(
     else:
         if not all_steps_passed:
             failed_nums = [
-                f"Step {s.step_index + 1} ({s.operation})"
-                for s in step_results if not s.passed
+                f"Step {s.step_index + 1} ({s.operation})" for s in step_results if not s.passed
             ]
             summary_parts.append(
                 f"{len(failed_nums)} step(s) did not achieve expected postcondition: "
@@ -580,11 +729,10 @@ def verify_cleaning_result(
         if flags_remaining:
             summary_parts.append(f"Quality flags still present: {', '.join(flags_remaining)}.")
         if failed_steps:
-            failed_ops = [
-                f"Step {fs['step_index'] + 1} ({fs['operation']})"
-                for fs in failed_steps
-            ]
-            summary_parts.append(f"{len(failed_steps)} step(s) failed during execution: {', '.join(failed_ops[:5])}.")
+            failed_ops = [f"Step {fs['step_index'] + 1} ({fs['operation']})" for fs in failed_steps]
+            summary_parts.append(
+                f"{len(failed_steps)} step(s) failed during execution: {', '.join(failed_ops[:5])}."
+            )
     if flags_resolved:
         summary_parts.append(f"Resolved flags: {', '.join(flags_resolved)}.")
     if flags_new:

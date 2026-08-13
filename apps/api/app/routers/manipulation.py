@@ -25,7 +25,6 @@ from app.services.manipulation import (
     generate_preview,
     parse_manipulation_intent,
 )
-from app.services.manipulation_executor import ManipulationError as ExecError
 from app.services.storage import download_file_bytes, upload_file_bytes
 from app.utils.dataframe import read_dataframe, to_sample_records
 
@@ -84,13 +83,13 @@ async def parse_command(
             dtypes,
             sample_rows,
         )
-    except (ManipulationError, ExecError) as e:
+    except ManipulationError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     # Generate a preview
     try:
         preview = await asyncio.to_thread(generate_preview, df, operations)
-    except (ManipulationError, ExecError) as e:
+    except ManipulationError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     return ManipulationPreview(**preview)
@@ -125,7 +124,7 @@ async def apply_operations(
             operations,
             dataset.r2_key,
         )
-    except (ManipulationError, ExecError) as e:
+    except ManipulationError as e:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
     # Update dataset metadata
