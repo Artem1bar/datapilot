@@ -178,6 +178,14 @@ uv run pytest
 | `test_cleaning_router_http.py` | HTTP-layer tests for cleaning router — UUID validation, body validation, 404 propagation |
 | `test_manipulation_router_http.py` | HTTP-layer tests for manipulation router — UUID validation, body validation, 404 propagation |
 | `test_app_boot.py` | App wiring smoke test — routers mounted, middleware installed |
+| `test_ai_client_init.py` | Regression guard: every AI service's `_get_client` reads a real settings attribute (catches wrong-case attribute name that surfaces only at runtime) |
+| `test_cleaning_sampling.py` | Cleaning-plan row sample — nulls stay distinguishable from empty strings in the markdown sent to Claude |
+| `test_config_secrets.py` | Production refuses to boot with default or missing secrets (API key, DB, R2, Clerk) |
+| `test_dataframe_utils.py` | Shared DataFrame utilities — null-preserving sampling, `NULL_SENTINEL` explicit marker for missing values |
+| `test_logging.py` | Structured JSON logging formatter and request-ID middleware |
+| `test_model_config.py` | Model tier selection is config-driven via settings, not hardcoded in individual services |
+| `test_remediation_ops.py` | Remediation-op subset definition and validator enforcement on agent cleaning steps |
+| `test_sentry_init.py` | Sentry initialization — no-op when `SENTRY_DSN` is empty; wires `FastApiIntegration` when a DSN is set |
 
 ### Frontend (128 tests) — run from `apps/web/`
 
