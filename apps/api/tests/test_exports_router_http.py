@@ -8,6 +8,7 @@ DB and Celery are fully mocked — no live services needed.
 from __future__ import annotations
 
 import uuid
+from datetime import UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI
@@ -46,7 +47,7 @@ def _make_job(
     status: str = "completed",
     result_json: dict | None = None,
 ) -> MagicMock:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
     job = MagicMock()
     job.id = uuid.UUID(JOB_ID)
@@ -57,7 +58,7 @@ def _make_job(
     job.progress = 0
     job.result_json = result_json or {"r2_key": f"exports/{JOB_ID}/data.csv"}
     job.error_text = None
-    job.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    job.created_at = datetime(2026, 1, 1, tzinfo=UTC)
     job.completed_at = None
     job.celery_task_id = None
     return job

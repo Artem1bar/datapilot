@@ -23,7 +23,6 @@ from app.services.manipulation import (
 )
 from app.services.manipulation_executor import ManipulationError
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

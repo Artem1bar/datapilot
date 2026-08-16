@@ -11,6 +11,22 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.5.0] — 2026-08-15
+
+### Fixed
+- Remove duplicate `ManipulationError` import; correct `_validate_drop_rows` return type annotation.
+
+### Tests
+- HTTP-layer tests for exports router — create, presigned download URL, 404/400/500 paths.
+- HTTP-layer tests for analysis router chat-session endpoints (list, get, 404).
+- `test_manipulation_service.py` — `generate_preview`, `_dataframe_to_bytes`, `parse_manipulation_intent` helpers.
+- `test_analysis.py` expanded — `_read_sample_rows` coverage for all file format branches (CSV, Excel, Parquet).
+- `test_rate_limit_sliding_window.py` — Redis sliding-window pipeline calls, TTL padding, reject-without-counting at limit.
+- Added 8 previously undocumented backend test files to README test table.
+- Backend total: **619 tests** (up from 559 in 0.4.0).
+
+---
+
 ## [0.4.0] — 2026-08-06
 
 ### Added
