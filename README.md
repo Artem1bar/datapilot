@@ -126,9 +126,9 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**747 tests total** (606 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
+**779 tests total** (638 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (619 tests) — run from `apps/api/`
+### Backend (651 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -187,6 +187,7 @@ uv run pytest
 | `test_remediation_ops.py` | Remediation-op subset definition and validator enforcement on agent cleaning steps |
 | `test_sentry_init.py` | Sentry initialization — no-op when `SENTRY_DSN` is empty; wires `FastApiIntegration` when a DSN is set |
 | `test_rate_limit_sliding_window.py` | Redis sliding-window logic for `check_rate_limit` — pipeline calls, TTL padding, reject-without-counting at limit |
+| `test_profile_task_helpers.py` | Pure helpers in `profile_task.py`: `_to_python` (numpy/pandas→Python), `_compute_profile` (stats, percentiles, JSON safety), `generate_smart_suggestions` (drop/type/PII), `detect_quality_issues` edge cases |
 
 ### Frontend (128 tests) — run from `apps/web/`
 
