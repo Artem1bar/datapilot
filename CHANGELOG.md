@@ -9,6 +9,12 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+## [0.5.1] — 2026-08-17
+
+### Tests
+- `test_profile_task_helpers.py` — 32 new unit tests for pure helper functions: `_to_python` (numpy/pandas→Python type coercion), `_compute_profile` (stats, percentiles, JSON safety, quality flags), `generate_smart_suggestions` (drop/type/PII detection), `detect_quality_issues` edge cases (dirty column names, empty columns, number words, extreme outliers).
+- Backend total: 619 → 651 tests.
+
 ---
 
 ## [0.5.0] — 2026-08-15
