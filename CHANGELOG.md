@@ -9,6 +9,13 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+## [0.5.2] — 2026-08-18
+
+### Fixed
+- Suppress `RuntimeWarning: coroutine ... was never awaited` in `test_exports_router_http.py` by overriding `db.add` with a synchronous `MagicMock` — `session.add()` is synchronous in SQLAlchemy async sessions, so `AsyncMock` was incorrect here.
+
+---
+
 ## [0.5.1] — 2026-08-17
 
 ### Tests
