@@ -66,6 +66,7 @@ def _make_job(
 
 def _make_db(*query_results: object) -> AsyncMock:
     db = AsyncMock()
+    db.add = MagicMock()  # session.add() is synchronous in SQLAlchemy async
     mocks = []
     for value in query_results:
         m = MagicMock()
