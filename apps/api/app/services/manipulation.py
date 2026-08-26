@@ -14,6 +14,7 @@ import pandas as pd
 from app.config import settings
 from app.services.manipulation_executor import ManipulationError, execute_operations
 from app.services.storage import download_file_bytes, upload_file_bytes
+from app.services.structured_output import complete_text
 from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
@@ -90,19 +91,18 @@ def parse_manipulation_intent(
         f"Sample rows (first 5):\n{json.dumps(sample_rows[:5], default=str)}"
     )
 
-    response = client.messages.create(
-        model=settings.MANIPULATION_MODEL,
-        max_tokens=4096,
-        system=_SYSTEM_PROMPT,
-        messages=[
-            {"role": "user", "content": f"Dataset context:\n{context}\n\nCommand: {command}"},
-        ],
-    )
-
-    text_block = next((b for b in response.content if hasattr(b, "text")), None)
-    if text_block is None:
-        raise ManipulationError("No text content in AI response")
-    text = text_block.text.strip()
+    try:
+        text = complete_text(
+            client,
+            model=settings.MANIPULATION_MODEL,
+            max_tokens=4096,
+            system=_SYSTEM_PROMPT,
+            messages=[
+                {"role": "user", "content": f"Dataset context:\n{context}\n\nCommand: {command}"},
+            ],
+        ).strip()
+    except ValueError as exc:
+        raise ManipulationError("No text content in AI response") from exc
     # Strip markdown fences if present
     if text.startswith("```"):
         text = text.split("\n", 1)[1] if "\n" in text else text[3:]

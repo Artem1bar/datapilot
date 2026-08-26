@@ -43,12 +43,28 @@ class Settings(BaseSettings):
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
 
-    # Anthropic model tiers, per pipeline stage. Defaults preserve the models
-    # each stage historically used; override any of them via env.
-    CLEANING_MODEL: str = "claude-opus-4-8"
-    VERIFICATION_MODEL: str = "claude-sonnet-4-6"
-    MANIPULATION_MODEL: str = "claude-sonnet-4-6"
-    ANALYSIS_MODEL: str = "claude-haiku-4-5-20251001"
+    # How model calls are dispatched:
+    #   "api" — the Anthropic SDK, billed against ANTHROPIC_API_KEY (production).
+    #   "cli" — subprocess the local `claude` binary, billed against the
+    #           operator's Claude subscription. CLOSED TESTING ONLY: it drives
+    #           one human's personal subscription, so it cannot serve real
+    #           users, and production refuses to boot with it (see
+    #           production_secret_problems below).
+    LLM_BACKEND: Literal["api", "cli"] = "api"
+
+    # CLI backend knobs (ignored when LLM_BACKEND="api").
+    CLAUDE_CLI_PATH: str = "claude"
+    CLAUDE_CLI_TIMEOUT_SECONDS: int = 300
+
+    # Anthropic model tiers, per pipeline stage. Override any of them via env.
+    # Cleaning, verification, and manipulation all mutate user data, so they run
+    # on the strongest model; analysis is interactive chat, where Sonnet 5's
+    # lower latency matters more (set ANALYSIS_MODEL=claude-opus-5 to trade
+    # latency for depth).
+    CLEANING_MODEL: str = "claude-opus-5"
+    VERIFICATION_MODEL: str = "claude-opus-5"
+    MANIPULATION_MODEL: str = "claude-opus-5"
+    ANALYSIS_MODEL: str = "claude-sonnet-5"
     DICTIONARY_MODEL: str = "claude-haiku-4-5-20251001"
 
     # Uploads — reject files larger than this (bytes). Default 50 MB.
@@ -88,6 +104,12 @@ class Settings(BaseSettings):
             problems.append("R2_SECRET_ACCESS_KEY is the insecure default 'minioadmin'")
         if "datapilot:datapilot@localhost" in self.DATABASE_URL:
             problems.append("DATABASE_URL uses the default local credentials")
+        if self.LLM_BACKEND != "api":
+            problems.append(
+                f"LLM_BACKEND is {self.LLM_BACKEND!r}; production must use 'api'. "
+                "The CLI backend bills a personal Claude subscription and is for "
+                "closed testing only."
+            )
         if not self.ANTHROPIC_API_KEY:
             problems.append("ANTHROPIC_API_KEY is not set")
         if not self.CLERK_JWT_ISSUER:

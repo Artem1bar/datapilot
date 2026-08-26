@@ -14,10 +14,19 @@ Why tool use and not ``messages.parse`` / ``output_config.format``:
       false`` on every object) cannot express.
 Forced tool use is the structured mechanism that works on every model and
 accepts a freeform object, so both call sites share this one helper.
+
+Backends:
+    This module is also the dispatch point for ``settings.LLM_BACKEND``. Under
+    ``"api"`` (the default, and the only backend production accepts) calls go
+    through the Anthropic SDK as described above. Under ``"cli"`` they are
+    routed to :mod:`app.services.llm_cli`, which shells out to the local
+    ``claude`` binary so usage bills a Claude subscription instead of an API
+    key — closed testing only, and structurally weaker (see that module).
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import time
@@ -25,6 +34,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from anthropic import Anthropic, RateLimitError
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +71,32 @@ def request_tool_call(
     ``rate_limit_wait`` seconds between them. Raises ``ValueError`` if the
     response contains no tool_use block for ``tool`` — which should not happen
     under forced ``tool_choice`` but guards against an unexpected response shape.
+
+    Under ``LLM_BACKEND="cli"`` this delegates to the CLI backend, which has no
+    forced tool use and parses JSON out of the reply instead; ``client`` is
+    unused on that path.
     """
     tool_name = tool["name"]
+
+    if settings.LLM_BACKEND == "cli":
+        from app.services import llm_cli
+
+        parsed = llm_cli.request_tool_call(
+            model=model,
+            system=system,
+            messages=messages,
+            tool=tool,
+            max_tokens=max_tokens,
+        )
+        # The CLI returns no tool_use block, so synthesize the continuation
+        # fields. raw_content is a text block holding the JSON the model
+        # produced, which is what the regeneration loop needs to echo back.
+        return ToolCallResult(
+            input=parsed,
+            tool_use_id=f"cli_{tool_name}",
+            raw_content=[{"type": "text", "text": json.dumps(parsed)}],
+        )
+
     response = None
     for attempt in range(rate_limit_retries):
         try:
@@ -104,6 +139,45 @@ def request_tool_call(
             )
 
     raise ValueError(f"Model did not call the required tool '{tool_name}'")
+
+
+def complete_text(
+    client: Anthropic,
+    *,
+    model: str,
+    system: Any,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+) -> str:
+    """Return the assistant's reply as plain text, honouring ``LLM_BACKEND``.
+
+    The text-completion twin of :func:`request_tool_call`, for the call sites
+    that parse JSON out of prose rather than forcing a tool call (analysis chat
+    and manipulation parsing). Keeping both backends behind one helper means
+    those services never branch on the backend themselves.
+
+    Raises ``ValueError`` if the API response carries no text block.
+    """
+    if settings.LLM_BACKEND == "cli":
+        from app.services import llm_cli
+
+        return llm_cli.complete_text(
+            model=model,
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+        )
+
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,  # type: ignore[arg-type]
+    )
+    text_block = next((b for b in response.content if hasattr(b, "text")), None)
+    if text_block is None:
+        raise ValueError("No text content in AI response")
+    return str(text_block.text)
 
 
 def coerce_confidence(value: Any) -> float | None:

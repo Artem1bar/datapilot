@@ -11,6 +11,7 @@ from typing import Any
 from anthropic import Anthropic
 
 from app.config import settings
+from app.services.structured_output import complete_text
 
 logger = logging.getLogger(__name__)
 
@@ -99,8 +100,8 @@ def analyze_data(
     messages.append({"role": "user", "content": question})
 
     try:
-        client = _get_client()
-        response = client.messages.create(
+        raw_text = complete_text(
+            _get_client(),
             model=settings.ANALYSIS_MODEL,
             max_tokens=4096,
             system=[
@@ -109,10 +110,6 @@ def analyze_data(
             ],
             messages=messages,
         )
-        text_block = next((b for b in response.content if hasattr(b, "text")), None)
-        if text_block is None:
-            raise ValueError("No text content in AI response")
-        raw_text = text_block.text
     except Exception:
         logger.exception("Claude API call failed")
         return {

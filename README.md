@@ -107,6 +107,7 @@ The app will be available at `http://localhost:5173`.
 | Variable | Description |
 |----------|-------------|
 | `ANTHROPIC_API_KEY` | Claude API key for the AI cleaning agent |
+| `LLM_BACKEND` | `api` (default, billed to the key above) or `cli` (bills the operator's Claude subscription — closed testing only; production refuses to boot with it) |
 | `DATABASE_URL` | PostgreSQL asyncpg connection string |
 | `REDIS_URL` | Redis connection string |
 | `R2_ENDPOINT_URL` | MinIO/R2 endpoint for file storage |
@@ -128,7 +129,7 @@ The app will be available at `http://localhost:5173`.
 
 **779 tests total** (638 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (651 tests) — run from `apps/api/`
+### Backend (678 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -188,6 +189,7 @@ uv run pytest
 | `test_sentry_init.py` | Sentry initialization — no-op when `SENTRY_DSN` is empty; wires `FastApiIntegration` when a DSN is set |
 | `test_rate_limit_sliding_window.py` | Redis sliding-window logic for `check_rate_limit` — pipeline calls, TTL padding, reject-without-counting at limit |
 | `test_profile_task_helpers.py` | Pure helpers in `profile_task.py`: `_to_python` (numpy/pandas→Python), `_compute_profile` (stats, percentiles, JSON safety), `generate_smart_suggestions` (drop/type/PII), `detect_quality_issues` edge cases |
+| `test_llm_cli_backend.py` | Claude CLI backend: harness-strip flags, API-key env stripping, stdin prompts, timeout/exit failures, message flattening, JSON extraction and retry, `LLM_BACKEND` dispatch, production guard |
 
 ### Frontend (128 tests) — run from `apps/web/`
 

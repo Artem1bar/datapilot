@@ -9,6 +9,39 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+### Changed
+- Model tiers moved to the Claude 5 family. Cleaning, verification, and manipulation
+  all run on `claude-opus-5` (they mutate user data, so they get the strongest model);
+  analysis runs on `claude-sonnet-5` for chat latency — set `ANALYSIS_MODEL=claude-opus-5`
+  to trade latency for depth. `DICTIONARY_MODEL` stays on Haiku 4.5.
+- `test_verification_agent.py` asserts the model against `settings.VERIFICATION_MODEL`
+  instead of a hardcoded id, so model bumps no longer break the test.
+
+### Added
+- `LLM_BACKEND` setting selecting how model calls are dispatched. `"api"` (default)
+  uses the Anthropic SDK billed to `ANTHROPIC_API_KEY`; `"cli"` subprocesses the local
+  `claude` binary so usage bills the operator's Claude subscription.
+- `app/services/llm_cli.py` — the CLI backend. Strips the coding-agent harness
+  (`--system-prompt`, `--setting-sources ""`, `--strict-mcp-config`, `--tools ""`),
+  which measured ~50k → ~600 tokens of preamble on a one-word reply; removes
+  `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` from the child environment so a stray
+  key cannot silently redirect billing to the API; sends prompts over stdin.
+- `structured_output.complete_text()` — text-completion twin of `request_tool_call()`,
+  so both backends sit behind one helper and services never branch on the backend.
+- Production refuses to boot with `LLM_BACKEND != "api"` (`production_secret_problems`):
+  the CLI backend drives one person's subscription and cannot serve real users.
+- `test_llm_cli_backend.py` — 27 tests covering argv construction, env stripping,
+  failure modes, message flattening, JSON extraction, and backend dispatch.
+  Backend total: 651 → 678 tests.
+- `docs/ANALYSIS_STATISTICS_SCOPE.md` — scope for replacing the LLM-generated
+  analysis path with plan → validate → execute → narrate over real computation.
+
+### Known limitation
+- Under `LLM_BACKEND="cli"` there is no forced tool use, so structured output is
+  parsed out of the reply with a retry instead of guaranteed by the API. This is
+  strictly weaker than the API path and is one reason the CLI backend is for
+  closed testing only.
+
 ## [0.5.2] — 2026-08-18
 
 ### Fixed
