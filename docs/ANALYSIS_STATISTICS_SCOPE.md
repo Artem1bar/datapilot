@@ -1,6 +1,8 @@
 # Scope: real statistical analysis
 
-_Drafted 2026-08-26. Status: proposed, not started._
+_Drafted 2026-08-26. **Phase 1 shipped 2026-08-26** — Tier 1 + Tier 2 and the
+plan → validate → execute → narrate architecture are implemented and verified
+end-to-end. Phases 2–4 remain proposed._
 
 ## The problem
 
@@ -156,16 +158,35 @@ it rather than the request path. Tiers 1–3 stay synchronous.
 
 ## Phasing
 
-| Phase | Content | Rough effort |
-|---|---|---|
-| 1 | Spec→Validate→Execute→Narrate + Tier 1–2 | 2–3 weeks |
-| 2 | Tier 3 + assumption checks + provenance | 1.5–2 weeks |
-| 3 | Tier 4 + code export | 2–3 weeks |
-| 4 | Tier 5 + Tier 6 + multiple-comparison tracking | 2–3 weeks |
+| Phase | Content | Rough effort | Status |
+|---|---|---|---|
+| 1 | Spec→Validate→Execute→Narrate + Tier 1–2 | 2–3 weeks | **Shipped** |
+| 2 | Tier 3 + assumption checks + provenance | 1.5–2 weeks | Proposed |
+| 3 | Tier 4 + code export | 2–3 weeks | Proposed |
+| 4 | Tier 5 + Tier 6 + multiple-comparison tracking | 2–3 weeks | Proposed |
 
-Phase 1 is the one that matters. Until it ships, the honest position is that the
-analysis tab produces illustrations, not findings — and it should probably say
-so in the UI in the meantime.
+### Phase 1 as built
+
+- `analysis_spec.py` — the operation registry and validator. The planner prompt's
+  capability list is generated from `OPERATIONS`, so the prompt cannot drift from
+  what the validator accepts.
+- `analysis_executor.py` — deterministic pandas/scipy execution, each result
+  carrying `n`, `n_excluded`, and notes.
+- `analysis.py` — plan (with a regenerate-on-rejection loop), execute, narrate.
+- Eleven operations: `describe`, `groupby_aggregate`, `value_counts`, `crosstab`
+  (with chi-square), `histogram`, `top_n`, `pivot`, `resample`,
+  `correlation_matrix` (with pairwise p-values), `scatter_with_fit` (OLS + R²),
+  `group_comparison` (95% CIs + Welch's t-test or one-way ANOVA).
+- The response contract (`answer`, `charts`, `tables`) is unchanged, so the
+  frontend needed no rewrite — what changed is that the values are measured.
+
+Verified end-to-end against a 480-row dataset with independently computed ground
+truth: regional totals, segment means, both confidence-interval bounds, sample
+sizes, and the t-statistic all matched exactly, and the pipeline correctly
+refused a question the data could not answer.
+
+Phase 2 is the next meaningful step: standalone hypothesis tests with assumption
+checks, and provenance exportable as a methods note.
 
 ## Risks
 

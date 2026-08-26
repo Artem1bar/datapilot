@@ -7,54 +7,48 @@ import json
 
 import pandas as pd
 
-from app.routers.analysis import _read_sample_rows
-from app.services.analysis import _build_dataset_context, _extract_json
+from app.routers.analysis import _load_analysis_frame
+from app.services.analysis import _build_planner_context, _extract_json
 
 
 class TestExtractJson:
     def test_plain_json_object(self):
-        text = '{"answer": "hello", "charts": []}'
-        result = _extract_json(text)
+        result = _extract_json('{"answer": "yes"}')
         assert result is not None
-        assert result["answer"] == "hello"
+        assert result["answer"] == "yes"
 
     def test_json_in_code_fence(self):
-        text = '```json\n{"answer": "hi", "charts": []}\n```'
-        result = _extract_json(text)
+        result = _extract_json('```json\n{"answer": "yes"}\n```')
         assert result is not None
-        assert result["answer"] == "hi"
+        assert result["answer"] == "yes"
 
     def test_json_in_unnamed_code_fence(self):
-        text = '```\n{"answer": "yo"}\n```'
-        result = _extract_json(text)
+        result = _extract_json('```\n{"answer": "yes"}\n```')
         assert result is not None
-        assert result["answer"] == "yo"
+        assert result["answer"] == "yes"
 
     def test_json_embedded_in_prose(self):
-        text = 'Sure, here you go: {"answer": "found it", "charts": []} Hope that helps!'
-        result = _extract_json(text)
+        result = _extract_json('Here is the spec:\n{"answer": "yes"}\nDone.')
         assert result is not None
-        assert result["answer"] == "found it"
+        assert result["answer"] == "yes"
 
     def test_returns_none_for_plain_prose(self):
-        text = "This is just regular text with no JSON at all."
-        result = _extract_json(text)
-        assert result is None
+        assert _extract_json("I cannot answer that question.") is None
 
     def test_returns_none_for_malformed_json(self):
-        text = '{"broken": true, missing_quote: "oops"}'
-        result = _extract_json(text)
-        assert result is None
+        assert _extract_json('{"answer": ') is None
+
+    def test_returns_none_for_json_array(self):
+        # A spec must be an object; a bare array is not one.
+        assert _extract_json("[1, 2, 3]") is None
 
     def test_nested_object(self):
-        data = {"answer": "ok", "charts": [{"type": "bar", "data": [1, 2]}]}
-        result = _extract_json(json.dumps(data))
+        result = _extract_json('{"a": {"b": {"c": 1}}}')
         assert result is not None
-        assert result["charts"][0]["type"] == "bar"
+        assert result["a"]["b"]["c"] == 1
 
     def test_empty_object(self):
-        result = _extract_json("{}")
-        assert result == {}
+        assert _extract_json("{}") == {}
 
     def test_code_fence_with_trailing_text(self):
         text = 'Analysis:\n```json\n{"answer": "yes"}\n```\nEnd.'
@@ -63,46 +57,52 @@ class TestExtractJson:
         assert result["answer"] == "yes"
 
 
-class TestBuildDatasetContext:
+class TestBuildPlannerContext:
+    """The planner sees real dtypes, the profile, and a small labelled sample."""
+
+    def _frame(self) -> pd.DataFrame:
+        return pd.DataFrame({"region": ["West", "East"], "revenue": [10.5, 20.0]})
+
+    def test_reports_real_dtypes(self):
+        ctx = _build_planner_context({}, self._frame())
+        # dtypes come from the frame, because that is what the validator checks.
+        assert "Column dtypes" in ctx
+        assert "float64" in ctx
+
     def test_contains_profile(self):
-        profile = {"row_count": 5, "columns": []}
-        rows = [{"a": 1}]
-        ctx = _build_dataset_context(profile, rows)
-        assert "Dataset Profile" in ctx
+        ctx = _build_planner_context({"row_count": 5}, self._frame())
         assert '"row_count": 5' in ctx
 
-    def test_contains_sample_rows(self):
-        profile = {}
-        rows = [{"id": 1, "name": "Alice"}, {"id": 2, "name": "Bob"}]
-        ctx = _build_dataset_context(profile, rows)
-        assert "Sample Rows" in ctx
-        assert "Alice" in ctx
-        assert "Bob" in ctx
+    def test_reports_row_and_column_counts(self):
+        ctx = _build_planner_context({}, self._frame())
+        assert "2 rows" in ctx
+        assert "2 columns" in ctx
 
-    def test_sections_in_order(self):
-        profile = {"a": 1}
-        rows = [{"x": 2}]
-        ctx = _build_dataset_context(profile, rows)
-        profile_pos = ctx.index("Dataset Profile")
-        sample_pos = ctx.index("Sample Rows")
-        assert profile_pos < sample_pos
+    def test_sample_is_labelled_as_non_evidence(self):
+        # The planner must not draw conclusions from the sample, so the header
+        # says so explicitly.
+        ctx = _build_planner_context({}, self._frame())
+        assert "not evidence" in ctx
 
-    def test_empty_profile_and_rows(self):
-        ctx = _build_dataset_context({}, [])
-        assert "Dataset Profile" in ctx
-        assert "Sample Rows" in ctx
+    def test_sample_is_capped(self):
+        df = pd.DataFrame({"n": range(500)})
+        ctx = _build_planner_context({}, df)
+        # 10-row sample cap: row 400 must not appear in the sample section.
+        assert ctx.count("400") == 0
 
     def test_non_serializable_values_handled(self):
         import datetime
 
-        profile = {"created": datetime.date(2024, 1, 1)}
-        rows = []
-        ctx = _build_dataset_context(profile, rows)
+        ctx = _build_planner_context({"created": datetime.date(2024, 1, 1)}, self._frame())
         assert "2024-01-01" in ctx
+
+    def test_empty_profile(self):
+        ctx = _build_planner_context({}, self._frame())
+        assert "Profile" in ctx
 
 
 # ---------------------------------------------------------------------------
-# _read_sample_rows  (router utility, no I/O — reads from bytes)
+# _load_analysis_frame  (router utility, no I/O — reads from bytes)
 # ---------------------------------------------------------------------------
 
 
@@ -122,42 +122,56 @@ def _parquet_bytes(df: pd.DataFrame) -> bytes:
     return buf.getvalue()
 
 
-class TestReadSampleRows:
-    def test_csv_returns_list_of_dicts(self):
-        df = pd.DataFrame({"a": [1, 2, 3], "b": ["x", "y", "z"]})
-        rows = _read_sample_rows(_csv_bytes(df), "data.csv")
-        assert isinstance(rows, list)
-        assert rows[0]["a"] == 1
-        assert rows[0]["b"] == "x"
-
-    def test_csv_capped_at_n_rows(self):
-        df = pd.DataFrame({"v": range(50)})
-        rows = _read_sample_rows(_csv_bytes(df), "big.csv", n=10)
-        assert len(rows) == 10
+class TestLoadAnalysisFrame:
+    def test_csv_returns_every_row(self):
+        # Analysis executes over the full dataset — no sampling at load time.
+        df = pd.DataFrame({"a": range(500)})
+        loaded = _load_analysis_frame(_csv_bytes(df), "data.csv")
+        assert len(loaded) == 500
 
     def test_excel_round_trip(self):
-        df = pd.DataFrame({"name": ["Alice", "Bob"], "score": [90, 85]})
-        rows = _read_sample_rows(_excel_bytes(df), "report.xlsx")
-        assert rows[0]["name"] == "Alice"
-        assert rows[1]["score"] == 85
-
-    def test_xls_extension_treated_as_excel(self):
-        df = pd.DataFrame({"val": [42]})
-        rows = _read_sample_rows(_excel_bytes(df), "legacy.xls")
-        assert rows[0]["val"] == 42
+        df = pd.DataFrame({"x": [1, 2], "y": ["a", "b"]})
+        loaded = _load_analysis_frame(_excel_bytes(df), "data.xlsx")
+        assert list(loaded.columns) == ["x", "y"]
+        assert len(loaded) == 2
 
     def test_parquet_round_trip(self):
-        df = pd.DataFrame({"x": [10, 20, 30]})
-        rows = _read_sample_rows(_parquet_bytes(df), "data.parquet", n=2)
-        assert len(rows) == 2
-        assert rows[0]["x"] == 10
+        df = pd.DataFrame({"n": [1, 2, 3]})
+        loaded = _load_analysis_frame(_parquet_bytes(df), "data.parquet")
+        assert len(loaded) == 3
 
-    def test_unknown_extension_falls_back_to_csv(self):
-        df = pd.DataFrame({"k": ["hello"]})
-        rows = _read_sample_rows(_csv_bytes(df), "mystery.txt")
-        assert rows[0]["k"] == "hello"
+    def test_empty_dataframe(self):
+        df = pd.DataFrame({"a": []})
+        loaded = _load_analysis_frame(_csv_bytes(df), "data.csv")
+        assert len(loaded) == 0
 
-    def test_empty_dataframe_returns_empty_list(self):
-        df = pd.DataFrame({"col": pd.Series([], dtype="object")})
-        rows = _read_sample_rows(_csv_bytes(df), "empty.csv")
-        assert rows == []
+    def test_date_named_column_is_parsed_to_datetime(self):
+        # CSV carries no dtype metadata, so without this the resample operation
+        # would be unreachable on every CSV upload.
+        df = pd.DataFrame({"order_date": ["2024-01-01", "2024-02-01"], "n": [1, 2]})
+        loaded = _load_analysis_frame(_csv_bytes(df), "data.csv")
+        assert pd.api.types.is_datetime64_any_dtype(loaded["order_date"])
+
+    def test_date_named_column_of_free_text_stays_text(self):
+        # A date-like name over unparseable values must not become NaT columns.
+        df = pd.DataFrame({"date_notes": ["ask the vendor", "unknown", "n/a"]})
+        loaded = _load_analysis_frame(_csv_bytes(df), "data.csv")
+        assert not pd.api.types.is_datetime64_any_dtype(loaded["date_notes"])
+
+    def test_non_date_named_column_is_left_alone(self):
+        df = pd.DataFrame({"label": ["2024-01-01", "2024-02-01"]})
+        loaded = _load_analysis_frame(_csv_bytes(df), "data.csv")
+        assert not pd.api.types.is_datetime64_any_dtype(loaded["label"])
+
+
+def test_planner_context_dtype_block_parses():
+    """The dtype block must be valid JSON — the planner relies on it verbatim."""
+    df = pd.DataFrame({"a": [1, 2], "b": ["x", "y"]})
+    ctx = _build_planner_context({"row_count": 2}, df)
+
+    start = ctx.index("{", ctx.index("Column dtypes"))
+    end = ctx.index("}", start)
+    dtypes = json.loads(ctx[start : end + 1])
+
+    assert set(dtypes) == {"a", "b"}
+    assert "int" in dtypes["a"]

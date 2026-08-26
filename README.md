@@ -129,7 +129,7 @@ The app will be available at `http://localhost:5173`.
 
 **779 tests total** (638 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (678 tests) — run from `apps/api/`
+### Backend (751 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -189,6 +189,8 @@ uv run pytest
 | `test_sentry_init.py` | Sentry initialization — no-op when `SENTRY_DSN` is empty; wires `FastApiIntegration` when a DSN is set |
 | `test_rate_limit_sliding_window.py` | Redis sliding-window logic for `check_rate_limit` — pipeline calls, TTL padding, reject-without-counting at limit |
 | `test_profile_task_helpers.py` | Pure helpers in `profile_task.py`: `_to_python` (numpy/pandas→Python), `_compute_profile` (stats, percentiles, JSON safety), `generate_smart_suggestions` (drop/type/PII), `detect_quality_issues` edge cases |
+| `test_analysis_spec.py` | Analysis spec validation — operation whitelist, hallucinated columns, numeric-agg/dtype mismatch, chart index range, refusal as a valid outcome |
+| `test_analysis_executor.py` | Analysis execution — aggregation/correlation/regression/t-test correctness against hand-computed values, null exclusion and provenance, chart y-column resolution, JSON safety |
 | `test_llm_cli_backend.py` | Claude CLI backend: harness-strip flags, API-key env stripping, stdin prompts, timeout/exit failures, message flattening, JSON extraction and retry, `LLM_BACKEND` dispatch, production guard |
 
 ### Frontend (128 tests) — run from `apps/web/`

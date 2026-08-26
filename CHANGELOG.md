@@ -9,6 +9,60 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+### Analysis now computes instead of generating (Phase 1)
+
+Previously `analyze_data()` sent the profile and 20 sample rows to a model and
+asked it to produce the answer *and the chart values*, so every rendered figure
+was generated rather than measured. Analysis now follows the same trust model as
+cleaning: the model proposes a validated plan, deterministic code executes it,
+and the model explains the results it is given.
+
+- `app/services/analysis_spec.py` — operation whitelist and validator. A spec is
+  checked against the registry and the dataframe's real columns and dtypes before
+  anything runs; an unknown op, a hallucinated column, or a numeric aggregation
+  over a text column is rejected, not coerced. All problems are reported at once
+  so regeneration takes one round trip. A `refusal` is a valid terminal state.
+- `app/services/analysis_executor.py` — deterministic execution in pandas/scipy
+  over the **full** dataframe. Every result carries `n`, `n_excluded`, and notes,
+  so the narrator can say "excluding 38 rows with missing revenue" rather than
+  reporting a mean over an unstated denominator.
+- Eleven operations: `describe`, `groupby_aggregate`, `value_counts`, `crosstab`
+  (chi-square), `histogram`, `top_n`, `pivot`, `resample`, `correlation_matrix`
+  (pairwise p-values), `scatter_with_fit` (OLS slope/R²/p), `group_comparison`
+  (95% CIs plus Welch's t-test or one-way ANOVA).
+- Two prompts replace one: `analysis_plan.txt` (emit a spec, never a number) and
+  `analysis_narrate.txt` (explain computed results; introducing an unsupplied
+  figure is forbidden, as is claiming causation).
+- The planner's capability list is generated from the `OPERATIONS` registry, so
+  the prompt cannot drift from what the validator accepts.
+- The API response contract (`answer`, `charts`, `tables`) is unchanged — the
+  frontend needed no rewrite.
+- Adds `scipy>=1.14.0`.
+
+Verified end-to-end against a 480-row dataset with independently computed ground
+truth: regional totals, segment means, both CI bounds, sample sizes, and the
+t-statistic matched exactly, and an unanswerable question was refused rather
+than answered.
+
+### Fixed
+- `build_chart` plotted result column 1 unconditionally, so a `group_comparison`
+  chart titled "average revenue" rendered group *sizes* — its columns are
+  `[group, count, mean, ...]`. Charts now resolve the y column from the spec's
+  optional `y`, then a per-operation default, then column 1.
+- Non-finite statistics (a t-test over zero-variance groups returns NaN) are
+  emitted as `null`. NaN is not valid JSON, so the API had been able to produce
+  a response no JSON parser accepts.
+- `_load_analysis_frame` tested for dtype `"object"` to find text columns, which
+  matches nothing on pandas 3 (it reports `"str"`). Date parsing silently never
+  ran. It now tests for what a column is *not* — neither datetime nor numeric.
+
+### Tests
+- `test_analysis_spec.py`, `test_analysis_executor.py` — validator gate and
+  execution correctness, asserted against hand-computed values rather than
+  "a number came back".
+- `test_analysis.py` rewritten for the new architecture.
+- Backend total: 678 → 751 tests.
+
 ### Changed
 - Model tiers moved to the Claude 5 family. Cleaning, verification, and manipulation
   all run on `claude-opus-5` (they mutate user data, so they get the strongest model);
