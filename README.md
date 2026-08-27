@@ -15,7 +15,8 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 - **Multi-sheet support** — handles Excel workbooks with multiple sheets
 - **Cleaning recipes** — save a cleaning plan as a reusable template and apply it to new datasets in one click
 - **AI data dictionary** — auto-generate a column-level data dictionary with field descriptions, types, and quality notes
-- **Data visualizations** — ask questions in chat and Claude returns charts (bar, line, pie, scatter) rendered live in a slide-out panel
+- **Statistical analysis** — ask analytical questions and DataPilot executes them against your full dataset using scipy/pandas (groupby, histograms, correlations, t-tests, OLS regression); Claude narrates results it did not produce, so figures are measured, not generated
+- **Data visualizations** — computed results are rendered as bar, line, scatter, and distribution charts in a slide-out panel
 - **Cleaned dataset library** — all processed datasets are stored and can be re-downloaded at any time
 - **Export** — download cleaned files as CSV, Excel, or Parquet
 - **Live progress** — polled job updates so you see cleaning progress as it happens
@@ -45,7 +46,7 @@ packages/               # Shared TypeScript types
 |-------|-----------|
 | Frontend | React 19, Vite, TypeScript, Tailwind CSS, Framer Motion |
 | Backend | Python, FastAPI, SQLAlchemy (async), Alembic |
-| AI | Anthropic Claude — Opus 4.8 (cleaning plan), Sonnet 4.6 (manipulation, verification), Haiku 4.5 (analysis, dictionary) |
+| AI | Anthropic Claude — Opus 5 (cleaning, verification, manipulation), Sonnet 5 (analysis — `ANALYSIS_MODEL=claude-opus-5` for deeper analysis), Haiku 4.5 (data dictionary) |
 | Auth | Clerk |
 | Storage | MinIO / Cloudflare R2 (file storage) |
 | Database | PostgreSQL |
@@ -127,7 +128,7 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**779 tests total** (638 mocked backend + 13 real-services integration + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
+**879 tests total** (751 backend + 128 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
 
 ### Backend (751 tests) — run from `apps/api/`
 
