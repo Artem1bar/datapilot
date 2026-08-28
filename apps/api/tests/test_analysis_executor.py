@@ -13,6 +13,7 @@ import json
 import numpy as np
 import pandas as pd
 import pytest
+from scipy import stats as scipy_stats
 
 from app.services.analysis_executor import (
     MAX_RESULT_ROWS,
@@ -187,7 +188,9 @@ class TestGroupComparison:
     def test_three_groups_run_anova(self):
         df = pd.DataFrame({"g": ["a", "a", "b", "b", "c", "c"], "v": [1.0, 2, 5, 6, 9, 10]})
         result = _run(df, "group_comparison", {"group_by": "g", "column": "v"})
-        assert result.stats["test"] == "one-way ANOVA"
+        # The test string names what was compared; see
+        # TestGroupComparisonNamesWhatItCompared for why.
+        assert result.stats["test"] == "one-way ANOVA across 3 groups (a, b, c)"
 
     def test_identical_groups_are_not_significant(self):
         df = pd.DataFrame({"g": ["a"] * 5 + ["b"] * 5, "v": [1.0, 2, 3, 4, 5] * 2})
@@ -417,3 +420,317 @@ class TestJSONSafety:
         )
         assert isinstance(result.rows[0][0], str)
         assert "2024-01" in result.rows[0][0]
+
+
+class TestTinyPValuesKeepSignificantFigures:
+    """A p-value below 1e-6 must not serialize as 0.0.
+
+    ``json_safe`` keeps significant figures below 1e-4 precisely so that a
+    vanishingly small p-value reads as vanishingly small. Rounding to six
+    decimal places before it gets there throws the figure away and prints
+    p = 0 — a claim of certainty no test can support — which then reaches the
+    narrator, the methods note and the Benjamini-Hochberg input.
+    """
+
+    def test_group_comparison_keeps_a_1e14_p_value(self):
+        rng = np.random.default_rng(3)
+        values = np.r_[rng.normal(0, 1, 30), rng.normal(3, 1, 30)]
+        df = pd.DataFrame({"g": ["A"] * 30 + ["B"] * 30, "y": values})
+
+        # Independently: scipy's own Welch t-test on the same two groups.
+        expected = float(scipy_stats.ttest_ind(values[:30], values[30:], equal_var=False).pvalue)
+        assert expected == pytest.approx(1.94018e-14, rel=1e-4)
+
+        result = _run(df, "group_comparison", {"group_by": "g", "column": "y"})
+        assert result.stats["p_value"] != 0.0
+        assert result.stats["p_value"] == pytest.approx(expected, rel=1e-5, abs=0.0)
+
+    def test_group_comparison_anova_keeps_a_tiny_p_value(self):
+        rng = np.random.default_rng(11)
+        values = np.r_[rng.normal(0, 1, 30), rng.normal(4, 1, 30), rng.normal(8, 1, 30)]
+        df = pd.DataFrame({"g": ["A"] * 30 + ["B"] * 30 + ["C"] * 30, "y": values})
+
+        expected = float(scipy_stats.f_oneway(values[:30], values[30:60], values[60:]).pvalue)
+        assert expected < 1e-6
+
+        result = _run(df, "group_comparison", {"group_by": "g", "column": "y"})
+        assert result.stats["p_value"] != 0.0
+        assert result.stats["p_value"] == pytest.approx(expected, rel=1e-5, abs=0.0)
+
+    def test_scatter_with_fit_keeps_a_tiny_slope_p_value(self):
+        # Noisy rather than exact: a perfect fit underflows scipy's own
+        # p-value to 0.0, which would test scipy instead of this rounding.
+        x = np.arange(200, dtype=float)
+        y = 2 * x + np.random.default_rng(7).normal(0, 40, 200)
+        df = pd.DataFrame({"x": x, "y": y})
+
+        expected = float(scipy_stats.linregress(x, y).pvalue)
+        assert expected == pytest.approx(2.0661e-111, rel=1e-4, abs=0.0)
+
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y"})
+        assert result.stats["p_value"] != 0.0
+        assert result.stats["p_value"] == pytest.approx(expected, rel=1e-5, abs=0.0)
+
+    def test_correlation_pairs_keep_a_tiny_p_value(self):
+        x = np.arange(200, dtype=float)
+        y = 2 * x + np.random.default_rng(7).normal(0, 40, 200)
+        df = pd.DataFrame({"a": x, "b": y})
+
+        expected = float(scipy_stats.pearsonr(x, y).pvalue)
+        assert expected == pytest.approx(2.0661e-111, rel=1e-4, abs=0.0)
+
+        result = _run(df, "correlation_matrix", {"columns": ["a", "b"]})
+        assert result.stats["pairs"][0]["p_value"] != 0.0
+        assert result.stats["pairs"][0]["p_value"] == pytest.approx(expected, rel=1e-5, abs=0.0)
+
+    def test_crosstab_chi_square_keeps_a_tiny_p_value(self):
+        # 200 rows, perfectly associated: chi-square is enormous and p is tiny.
+        df = pd.DataFrame({"r": ["u", "v"] * 100, "c": ["yes", "no"] * 100})
+        table = pd.crosstab(df["r"], df["c"])
+        expected = float(scipy_stats.chi2_contingency(table).pvalue)
+        assert expected < 1e-6
+
+        result = _run(df, "crosstab", {"row": "r", "column": "c"})
+        assert result.stats["p_value"] != 0.0
+        assert result.stats["p_value"] == pytest.approx(expected, rel=1e-5, abs=0.0)
+
+
+class TestGroupComparisonNamesWhatItCompared:
+    """A group too small to test must not vanish between the table and the test.
+
+    ``group_comparison`` filters groups with a single observation out of the
+    significance test — correctly, since one value contributes no variance —
+    but the summary table and the chart still show them. The result has to say
+    which groups the test used, which it did not, and over how many rows.
+    """
+
+    @pytest.fixture
+    def one_singleton(self) -> pd.DataFrame:
+        # A and B are six rows each; C is a single outlying row.
+        # Welch's t on A vs B alone: t = -11.3747, p = 4.82427e-07.
+        return pd.DataFrame(
+            {
+                "segment": ["A"] * 6 + ["B"] * 6 + ["C"],
+                "spend": [10, 12, 11, 13, 9, 12, 20, 22, 21, 19, 23, 20, 400],
+            }
+        )
+
+    def test_the_test_string_names_the_compared_groups(self, one_singleton):
+        result = _run(one_singleton, "group_comparison", {"group_by": "segment", "column": "spend"})
+        assert "A" in result.stats["test"] and "B" in result.stats["test"]
+        assert result.stats["groups_compared"] == ["A", "B"]
+        assert result.stats["groups_excluded"] == ["C"]
+
+    def test_n_is_the_rows_the_test_used(self, one_singleton):
+        result = _run(one_singleton, "group_comparison", {"group_by": "segment", "column": "spend"})
+        assert result.n == 12  # A (6) + B (6); C's single row is not in the test
+        assert result.n_excluded == 1
+        assert any("C" in note for note in result.notes)
+
+    def test_the_statistic_is_still_the_two_group_welch_t(self, one_singleton):
+        result = _run(one_singleton, "group_comparison", {"group_by": "segment", "column": "spend"})
+        expected = scipy_stats.ttest_ind(
+            one_singleton.spend[:6], one_singleton.spend[6:12], equal_var=False
+        )
+        assert result.stats["statistic"] == pytest.approx(float(expected.statistic), abs=1e-4)
+        assert result.stats["p_value"] == pytest.approx(float(expected.pvalue), rel=1e-5, abs=0.0)
+
+    def test_the_summary_table_still_shows_every_group(self, one_singleton):
+        result = _run(one_singleton, "group_comparison", {"group_by": "segment", "column": "spend"})
+        assert [row[0] for row in result.rows] == ["A", "B", "C"]
+
+    def test_two_singletons_leave_one_group_and_say_no_test_ran(self):
+        df = pd.DataFrame(
+            {"segment": ["A"] * 6 + ["B"] + ["C"], "spend": [10, 12, 11, 13, 9, 12, 500, 900]}
+        )
+        result = _run(df, "group_comparison", {"group_by": "segment", "column": "spend"})
+        assert result.stats["test"] == "not computed"
+        assert "B" in result.stats["reason"] and "C" in result.stats["reason"]
+        assert result.stats.get("p_value") is None
+
+    def test_four_groups_with_a_singleton_run_anova_over_three(self):
+        df = pd.DataFrame(
+            {
+                "g": ["a", "a", "b", "b", "c", "c", "d"],
+                "v": [1.0, 2, 5, 6, 9, 10, 99],
+            }
+        )
+        result = _run(df, "group_comparison", {"group_by": "g", "column": "v"})
+        assert "ANOVA" in result.stats["test"]
+        assert result.stats["groups_compared"] == ["a", "b", "c"]
+        assert result.stats["groups_excluded"] == ["d"]
+        assert result.n == 6
+        assert result.n_excluded == 1
+
+
+class TestCrosstabAndPivotReportTheirRealDenominator:
+    """pandas drops null keys; the result has to say so.
+
+    ``pd.crosstab`` and ``pd.pivot_table`` silently exclude rows null in any
+    column they use, and a chi-square p-value was being attached to the
+    overstated denominator. The narrator prompt asks for excluded rows to be
+    stated — here it was being told there were none.
+    """
+
+    @pytest.fixture
+    def with_nulls(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "arm": ["x"] * 40 + ["y"] * 40 + [None] * 20,
+                "outcome": ["p", "q"] * 50,
+                "revenue": [1.0] * 90 + [None] * 10,
+            }
+        )
+
+    def test_crosstab_n_is_the_rows_the_table_covers(self, with_nulls):
+        result = _run(with_nulls, "crosstab", {"row": "arm", "column": "outcome"})
+        assert result.n == 80
+        assert result.n_excluded == 20
+        assert any("20" in note for note in result.notes)
+        assert sum(sum(row[1:]) for row in result.rows) == 80
+
+    def test_crosstab_chi_square_matches_the_stated_n(self, with_nulls):
+        result = _run(with_nulls, "crosstab", {"row": "arm", "column": "outcome"})
+        complete = with_nulls.dropna(subset=["arm", "outcome"])
+        expected = scipy_stats.chi2_contingency(pd.crosstab(complete["arm"], complete["outcome"]))
+        assert result.stats["chi2"] == pytest.approx(float(expected.statistic), abs=1e-4)
+        assert result.n == len(complete)
+
+    def test_pivot_n_is_the_rows_it_aggregated(self, with_nulls):
+        result = _run(
+            with_nulls,
+            "pivot",
+            {"index": ["arm"], "columns": "outcome", "values": "revenue", "agg": "sum"},
+        )
+        # 20 rows have a null arm; of the remaining 80, none has a null
+        # revenue (the nulls are in rows 90-99, which also have a null arm).
+        assert result.n == 80
+        assert result.n_excluded == 20
+        assert any("20" in note for note in result.notes)
+
+    def test_pivot_drops_null_values_for_numeric_aggregations(self):
+        df = pd.DataFrame(
+            {
+                "arm": ["x", "y"] * 10,
+                "outcome": ["p", "q"] * 10,
+                "revenue": [1.0] * 15 + [None] * 5,
+            }
+        )
+        result = _run(
+            df, "pivot", {"index": ["arm"], "columns": "outcome", "values": "revenue", "agg": "sum"}
+        )
+        assert result.n == 15
+        assert result.n_excluded == 5
+
+    def test_a_clean_frame_still_reports_every_row(self):
+        df = pd.DataFrame({"a": ["x", "y"] * 10, "b": ["p", "q"] * 10})
+        result = _run(df, "crosstab", {"row": "a", "column": "b"})
+        assert result.n == 20
+        assert result.n_excluded == 0
+        assert result.notes == []
+
+
+class TestChartTargetsTheSpecOperation:
+    """``chart.operation`` names a spec index, not a position in the results.
+
+    Failures are dropped from the result list, so indexing it positionally
+    plots a different operation than the one the chart config asked for, or
+    drops the chart entirely.
+    """
+
+    @pytest.fixture
+    def spec_with_a_failure(self) -> dict:
+        return {
+            "operations": [
+                {
+                    # Refuses: a two-group t-test over three groups.
+                    "op": "ttest",
+                    "label": "Impossible comparison",
+                    "params": {"kind": "independent", "column": "v", "group_by": "g"},
+                },
+                {
+                    "op": "groupby_aggregate",
+                    "label": "Mean v by g",
+                    "params": {"group_by": ["g"], "column": "v", "agg": "mean"},
+                },
+            ],
+            "chart": {"type": "bar", "operation": 1},
+        }
+
+    @pytest.fixture
+    def three_groups(self) -> pd.DataFrame:
+        return pd.DataFrame(
+            {"g": ["a", "a", "b", "b", "c", "c"], "v": [1.0, 3.0, 5.0, 7.0, 9.0, 11.0]}
+        )
+
+    def test_the_chart_finds_its_operation_after_an_earlier_failure(
+        self, three_groups, spec_with_a_failure
+    ):
+        results = execute_spec(three_groups, spec_with_a_failure)
+        assert len(results) == 1
+        chart = build_chart(spec_with_a_failure["chart"], results)
+        assert chart is not None
+        assert chart["title"] == "Mean v by g"
+        assert {point["x"]: point["y"] for point in chart["data"]} == {
+            "a": 2.0,
+            "b": 6.0,
+            "c": 10.0,
+        }
+
+    def test_a_chart_pointing_at_a_failed_operation_is_dropped(self, three_groups):
+        spec = {
+            "operations": [
+                {
+                    "op": "ttest",
+                    "label": "Impossible comparison",
+                    "params": {"kind": "independent", "column": "v", "group_by": "g"},
+                },
+                {
+                    "op": "groupby_aggregate",
+                    "label": "Mean v by g",
+                    "params": {"group_by": ["g"], "column": "v", "agg": "mean"},
+                },
+            ],
+            "chart": {"type": "bar", "operation": 0},
+        }
+        results = execute_spec(three_groups, spec)
+        # Operation 0 did not survive, so there is nothing honest to plot.
+        assert build_chart(spec["chart"], results) is None
+
+    def test_results_carry_their_spec_index(self, three_groups, spec_with_a_failure):
+        results = execute_spec(three_groups, spec_with_a_failure)
+        assert results[0].spec_index == 1
+
+
+class TestMinorEdgeCases:
+    def test_top_n_by_its_own_column(self):
+        # "top 10 revenues by revenue" is a plausible plan and the validator
+        # permits it. df[[c, c]] makes a duplicate column and dropna(subset=[c])
+        # then raises "The column label is not unique", so the operation was
+        # silently dropped from the answer.
+        df = pd.DataFrame({"revenue": [10.0, 50.0, None, 30.0]})
+        result = _run(df, "top_n", {"column": "revenue", "by": "revenue", "n": 2})
+        assert [row[0] for row in result.rows] == [50.0, 30.0]
+        assert result.n == 3
+        assert result.n_excluded == 1
+
+    def test_not_equal_filter_says_that_it_keeps_nulls(self):
+        # pandas semantics: NaN != 'x' is True, so "!=" keeps rows whose value
+        # is missing while "==" drops them. The behaviour is left alone (the
+        # code export reproduces it exactly) but the note now says so, because
+        # it changes the denominator of everything downstream.
+        df = pd.DataFrame({"c": ["x", "y", None, "x"], "v": [1, 2, 3, 4]})
+        kept, note = apply_filter(df, {"column": "c", "operator": "!=", "value": "x"})
+        assert list(kept["v"]) == [2, 3]
+        assert "missing" in note
+
+    def test_equality_filter_note_is_unchanged(self):
+        df = pd.DataFrame({"c": ["x", "y", None, "x"], "v": [1, 2, 3, 4]})
+        kept, note = apply_filter(df, {"column": "c", "operator": "==", "value": "x"})
+        assert list(kept["v"]) == [1, 4]
+        assert "missing" not in note
+
+    def test_not_equal_filter_on_a_clean_column_says_nothing_extra(self):
+        df = pd.DataFrame({"c": ["x", "y"], "v": [1, 2]})
+        _, note = apply_filter(df, {"column": "c", "operator": "!=", "value": "x"})
+        assert "missing" not in note

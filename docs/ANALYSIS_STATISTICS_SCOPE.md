@@ -1,8 +1,9 @@
 # Scope: real statistical analysis
 
 _Drafted 2026-08-26. **Phase 1 shipped 2026-08-26** — Tier 1 + Tier 2 and the
-plan → validate → execute → narrate architecture are implemented and verified
-end-to-end. Phases 2–4 remain proposed._
+plan → validate → execute → narrate architecture. **Phase 2 shipped 2026-08-27**
+— Tier 3, assumption checks, effect sizes, and provenance. Phases 3–4 remain
+proposed._
 
 ## The problem
 
@@ -161,7 +162,7 @@ it rather than the request path. Tiers 1–3 stay synchronous.
 | Phase | Content | Rough effort | Status |
 |---|---|---|---|
 | 1 | Spec→Validate→Execute→Narrate + Tier 1–2 | 2–3 weeks | **Shipped** |
-| 2 | Tier 3 + assumption checks + provenance | 1.5–2 weeks | Proposed |
+| 2 | Tier 3 + assumption checks + provenance | 1.5–2 weeks | **Shipped** |
 | 3 | Tier 4 + code export | 2–3 weeks | Proposed |
 | 4 | Tier 5 + Tier 6 + multiple-comparison tracking | 2–3 weeks | Proposed |
 
@@ -185,8 +186,73 @@ truth: regional totals, segment means, both confidence-interval bounds, sample
 sizes, and the t-statistic all matched exactly, and the pipeline correctly
 refused a question the data could not answer.
 
-Phase 2 is the next meaningful step: standalone hypothesis tests with assumption
-checks, and provenance exportable as a methods note.
+### Phase 2 as built
+
+Nineteen operations now, eight of them inferential. Every Tier 3 result carries
+the same four things beside its statistic — effect size, confidence interval,
+assumption checks, and n — because a p-value alone invites the two commonest
+mistakes in applied statistics: reading significance as importance, and running
+a test whose assumptions the data violate.
+
+- `analysis_stats.py` — effect sizes, intervals, and assumption checks as pure
+  functions over arrays. Free of pandas and of the operation registry, so they
+  read as statistics rather than as pipeline plumbing.
+- `analysis_prep.py` — group splitting and summarizing, shared by every test.
+  Groups come back in sorted label order, so the sign of a reported difference
+  is stable and explainable rather than dependent on row order in the upload.
+- `analysis_inference.py` — `ttest` (one-sample / independent / paired),
+  `anova` (with Tukey HSD post-hoc), `kruskal`, `mannwhitney`, `wilcoxon`,
+  `normality_test`.
+- `analysis_categorical.py` — `chi_square` (independence with Cramér's V and an
+  exact Fisher result for 2x2 tables, or goodness-of-fit), `proportion_test`
+  (one- and two-sample, Wilson and Newcombe intervals, Cohen's h).
+- `analysis_provenance.py` — the record behind an answer, rendered as a methods
+  note. Deterministic by construction: a methods note written by the thing whose
+  trustworthiness it attests to would be worth nothing.
+- `analysis_result.py` — the shared result type, extracted so descriptive and
+  inferential execution have one definition of what a result is.
+
+**Assumption checks are three-valued.** `true`, `false`, and `null` — where null
+means the check could not be evaluated, which is not the same as passing. The
+narrator prompt requires every failed check to appear in the answer, in the same
+breath as the finding it undermines rather than as a closing caveat.
+
+**Refusal over degradation.** An independent t-test over three groups raises and
+names ANOVA rather than silently comparing the first two. A `success_value` that
+does not occur in the column is rejected by the validator with the real category
+list, so the model can correct it, instead of surfacing as a rate of zero.
+
+**Multiple comparisons**, listed below as a Phase 4 item, arrived early because
+it costs thirty lines and belongs with the honesty work: p-values across the
+tests in one answer are adjusted by Benjamini-Hochberg, and the narrator is told
+to treat the adjusted value as the one that decides significance. Session-level
+tracking across turns is still Phase 4.
+
+**Category discovery.** `ColumnRoles` now carries the distinct values of
+low-cardinality text columns (bounded: 30 columns, 50 values, 200k rows), so a
+filter on `"Weest"` is rejected with the real spellings rather than silently
+returning an empty frame that makes every downstream operation fail for reasons
+unrelated to the question.
+
+Two defects were found and fixed while verifying:
+
+- P-values below the rounding precision serialized as `0.0`. A methods note
+  reading `p = 0` claims certainty no test can support. Values below 1e-4 now
+  keep significant figures rather than decimal places.
+- Dropped incomplete pairs were reported as a *failed* assumption, which under
+  the narrator's rules would have had routine missingness described as
+  undermining the result. It is now "not evaluated", with the count and the
+  condition under which it would matter.
+
+Verified end-to-end against a 600-row dataset: t/F/z/chi-square statistics,
+degrees of freedom, Cohen's d, eta and omega squared, Cramér's V, Cohen's h,
+both CI bounds, and every group mean and proportion matched statistics computed
+independently from the raw arrays. `z²` equalled the uncorrected chi-square on
+the same table, as it must.
+
+Phase 3 is the next meaningful step: Tier 4 regression, and code export — the
+trust bridge that lets a researcher rerun the analysis in their own
+environment.
 
 ## Risks
 

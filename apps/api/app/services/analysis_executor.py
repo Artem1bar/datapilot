@@ -16,127 +16,43 @@ from __future__ import annotations
 
 import logging
 import math
-from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from scipy import stats
 
+from app.services.analysis_categorical import CATEGORICAL_OPERATIONS
+from app.services.analysis_inference import INFERENCE_OPERATIONS
+from app.services.analysis_regression import REGRESSION_OPERATIONS
+from app.services.analysis_result import (  # noqa: F401  (re-exported for callers)
+    MAX_RESULT_ROWS,
+    ExecutionError,
+    OperationResult,
+    frame_to_result,
+    to_python,
+    with_spec_index,
+)
 from app.services.analysis_spec import ColumnRoles  # noqa: F401  (re-exported for callers)
+from app.services.analysis_survey import SURVEY_OPERATIONS
+from app.services.analysis_timeseries import TIMESERIES_OPERATIONS
 
 logger = logging.getLogger(__name__)
 
-# Result tables are capped so a groupby over a high-cardinality column cannot
-# return 50,000 rows to the UI or the narrator prompt.
-MAX_RESULT_ROWS = 200
 
 # Default row counts for operations that take an optional limit.
 DEFAULT_TOP_N = 10
 DEFAULT_VALUE_COUNTS = 20
 DEFAULT_BINS = 10
 
+# A group of one has no variance to contribute, so no comparison test can use
+# it; below this size a group is described but not tested.
+MIN_TESTABLE_GROUP_N = 2
 
-@dataclass(frozen=True)
-class OperationResult:
-    """One computed table, with the provenance needed to report it honestly."""
-
-    op: str
-    label: str
-    columns: list[str]
-    rows: list[list[Any]]
-    total_rows: int
-    n: int
-    n_excluded: int = 0
-    notes: list[str] = field(default_factory=list)
-    stats: dict[str, Any] = field(default_factory=dict)
-
-    def to_table(self) -> dict[str, Any]:
-        """Render as the API's table shape (unchanged from the previous contract)."""
-        return {"columns": self.columns, "rows": self.rows, "total_rows": self.total_rows}
-
-
-class ExecutionError(RuntimeError):
-    """An operation failed at runtime despite passing validation."""
-
-
-def _py(value: Any) -> Any:
-    """Coerce numpy/pandas scalars to JSON-safe Python values."""
-    if value is None or value is pd.NaT:
-        return None
-    if isinstance(value, (np.integer,)):
-        return int(value)
-    if isinstance(value, (np.floating, float)):
-        as_float = float(value)
-        return None if math.isnan(as_float) or math.isinf(as_float) else round(as_float, 6)
-    if isinstance(value, (np.bool_, bool)):
-        return bool(value)
-    if isinstance(value, (pd.Timestamp,)):
-        return value.isoformat()
-    if pd.isna(value) if np.isscalar(value) else False:
-        return None
-    return value if isinstance(value, (str, int)) else str(value)
-
-
-def _round(value: Any, places: int = 4) -> float | None:
-    """Round a statistic, returning None for NaN/inf rather than a bad float.
-
-    Degenerate inputs produce non-finite statistics — a t-test over two
-    zero-variance groups returns NaN — and NaN is not valid JSON. Emitting None
-    lets the narrator say the test could not be computed instead of the API
-    serializing a value no JSON parser accepts.
-    """
-    try:
-        as_float = float(value)
-    except (TypeError, ValueError):
-        return None
-    if math.isnan(as_float) or math.isinf(as_float):
-        return None
-    return round(as_float, places)
-
-
-def _clean_stats(payload: dict[str, Any]) -> dict[str, Any]:
-    """Recursively replace non-finite floats in a statistics payload with None."""
-    cleaned: dict[str, Any] = {}
-    for key, value in payload.items():
-        if isinstance(value, float):
-            cleaned[key] = _round(value, 6)
-        elif isinstance(value, dict):
-            cleaned[key] = _clean_stats(value)
-        elif isinstance(value, list):
-            cleaned[key] = [_clean_stats(v) if isinstance(v, dict) else v for v in value]
-        else:
-            cleaned[key] = value
-    return cleaned
-
-
-def _frame_to_result(
-    df: pd.DataFrame,
-    *,
-    op: str,
-    label: str,
-    n: int,
-    n_excluded: int = 0,
-    notes: list[str] | None = None,
-    stats_payload: dict[str, Any] | None = None,
-) -> OperationResult:
-    """Package a result frame, truncating to ``MAX_RESULT_ROWS``."""
-    total = len(df)
-    truncated = df.head(MAX_RESULT_ROWS)
-    all_notes = list(notes or [])
-    if total > MAX_RESULT_ROWS:
-        all_notes.append(f"Showing the first {MAX_RESULT_ROWS} of {total} result rows.")
-    return OperationResult(
-        op=op,
-        label=label,
-        columns=[str(c) for c in truncated.columns],
-        rows=[[_py(v) for v in row] for row in truncated.itertuples(index=False, name=None)],
-        total_rows=total,
-        n=n,
-        n_excluded=n_excluded,
-        notes=all_notes,
-        stats=_clean_stats(stats_payload) if stats_payload else {},
-    )
+# How many group names a prose sentence lists before it summarizes the rest.
+# A group_comparison over a high-cardinality column would otherwise paste a
+# hundred category names into a note.
+MAX_NAMED_GROUPS = 5
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +98,18 @@ def apply_filter(
 
     filtered = df[mask.fillna(False)]
     description = f"{column} {operator} {value!r}" if value is not None else f"{column} {operator}"
-    return filtered, f"Filtered to rows where {description} ({len(filtered)} of {len(df)} rows)."
+    note = f"Filtered to rows where {description} ({len(filtered)} of {len(df)} rows)."
+
+    # pandas semantics: NaN != value is True, so "!=" keeps rows whose value is
+    # missing while "==" drops them. The behaviour is left as pandas defines it
+    # — the code export reproduces it exactly — but it silently changes the
+    # denominator of every operation downstream, so it is stated rather than
+    # left for the reader to infer.
+    if operator == "!=":
+        kept_null = int(series.isna().sum())
+        if kept_null:
+            note += f" Includes {kept_null} row(s) where {column} is missing."
+    return filtered, note
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +124,7 @@ def _op_describe(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operat
     if not columns:
         raise ExecutionError("describe: no numeric columns to summarize")
     described = df[columns].describe().reset_index().rename(columns={"index": "statistic"})
-    return _frame_to_result(described, op="describe", label=label, n=len(df))
+    return frame_to_result(described, op="describe", label=label, n=len(df))
 
 
 def _op_groupby_aggregate(df: pd.DataFrame, params: dict[str, Any], label: str) -> OperationResult:
@@ -223,7 +150,7 @@ def _op_groupby_aggregate(df: pd.DataFrame, params: dict[str, Any], label: str) 
     grouped = grouped.sort_values(f"{column}_{agg}", ascending=False)
 
     notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
-    return _frame_to_result(
+    return frame_to_result(
         grouped,
         op="groupby_aggregate",
         label=label,
@@ -243,7 +170,7 @@ def _op_value_counts(df: pd.DataFrame, params: dict[str, Any], label: str) -> Op
     frame.columns = [column, "proportion" if normalize else "count"]
     excluded = int(df[column].isna().sum())
     notes = [f"Excluded {excluded} row(s) with a missing {column}."] if excluded else []
-    return _frame_to_result(
+    return frame_to_result(
         frame,
         op="value_counts",
         label=label,
@@ -258,9 +185,16 @@ def _op_crosstab(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operat
     col_col = params["column"]
     normalize = params.get("normalize", False)
 
-    table = pd.crosstab(df[row_col], df[col_col], normalize="index" if normalize else False)
+    # pd.crosstab drops rows null in either column, so the denominator is the
+    # complete rows — not len(df). Dropping them here rather than letting
+    # pandas do it silently is what lets n, n_excluded and the note agree with
+    # the table and with the chi-square attached to it.
+    subset = df[[row_col, col_col]].dropna()
+    excluded = len(df) - len(subset)
+
+    table = pd.crosstab(subset[row_col], subset[col_col], normalize="index" if normalize else False)
     # Chi-square needs raw counts, so recompute unnormalized when normalizing.
-    counts = table if not normalize else pd.crosstab(df[row_col], df[col_col])
+    counts = table if not normalize else pd.crosstab(subset[row_col], subset[col_col])
     stats_payload: dict[str, Any] = {}
     if counts.shape[0] > 1 and counts.shape[1] > 1 and counts.to_numpy().sum() > 0:
         try:
@@ -268,7 +202,10 @@ def _op_crosstab(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operat
             stats_payload = {
                 "test": "chi-square test of independence",
                 "chi2": round(float(chi2), 4),
-                "p_value": round(float(p_value), 6),
+                # Not pre-rounded: json_safe keeps significant figures below
+                # 1e-4, and round(p, 6) would hand it a 0.0 to faithfully
+                # report as p = 0 — certainty no test can support.
+                "p_value": float(p_value),
                 "dof": int(dof),
             }
         except ValueError as exc:  # zero-frequency rows/columns
@@ -276,8 +213,15 @@ def _op_crosstab(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operat
 
     flat = table.reset_index()
     flat.columns = [str(c) for c in flat.columns]
-    return _frame_to_result(
-        flat, op="crosstab", label=label, n=len(df), stats_payload=stats_payload
+    notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
+    return frame_to_result(
+        flat,
+        op="crosstab",
+        label=label,
+        n=len(subset),
+        n_excluded=excluded,
+        notes=notes,
+        stats_payload=stats_payload,
     )
 
 
@@ -297,7 +241,7 @@ def _op_histogram(df: pd.DataFrame, params: dict[str, Any], label: str) -> Opera
         }
     )
     notes = [f"Excluded {excluded} row(s) with a missing {column}."] if excluded else []
-    return _frame_to_result(
+    return frame_to_result(
         frame, op="histogram", label=label, n=len(series), n_excluded=excluded, notes=notes
     )
 
@@ -308,11 +252,15 @@ def _op_top_n(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operation
     n = params.get("n", DEFAULT_TOP_N)
     ascending = params.get("ascending", False)
 
-    subset = df[[column, by]].dropna(subset=[by])
+    # "Top 10 revenues by revenue" is a plausible plan and the validator allows
+    # it, but df[[c, c]] builds a duplicate column and dropna(subset=[c]) then
+    # refuses to work on an ambiguous label. Select each column once.
+    wanted = [column] if column == by else [column, by]
+    subset = df[wanted].dropna(subset=[by])
     excluded = len(df) - len(subset)
     ordered = subset.sort_values(by, ascending=ascending).head(n)
     notes = [f"Excluded {excluded} row(s) with a missing {by}."] if excluded else []
-    return _frame_to_result(
+    return frame_to_result(
         ordered, op="top_n", label=label, n=len(subset), n_excluded=excluded, notes=notes
     )
 
@@ -323,10 +271,25 @@ def _op_pivot(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operation
     values = params["values"]
     agg = params["agg"]
 
-    table = pd.pivot_table(df, index=index, columns=columns, values=values, aggfunc=agg)
+    # pivot_table drops rows with a null key, and the numeric aggregations
+    # ignore null values, so the table's denominator is the complete rows.
+    # count/nunique are meaningful over a null target, matching the rule in
+    # _op_groupby_aggregate.
+    keys = [*index, columns] if isinstance(index, list) else [index, columns]
+    subset = df.dropna(subset=keys)
+    if agg not in ("count", "nunique"):
+        subset = subset.dropna(subset=[values])
+    excluded = len(df) - len(subset)
+    if subset.empty:
+        raise ExecutionError(f"pivot: no rows remain after dropping nulls in {keys + [values]}")
+
+    table = pd.pivot_table(subset, index=index, columns=columns, values=values, aggfunc=agg)
     flat = table.reset_index()
     flat.columns = [str(c) for c in flat.columns]
-    return _frame_to_result(flat, op="pivot", label=label, n=len(df))
+    notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
+    return frame_to_result(
+        flat, op="pivot", label=label, n=len(subset), n_excluded=excluded, notes=notes
+    )
 
 
 def _op_resample(df: pd.DataFrame, params: dict[str, Any], label: str) -> OperationResult:
@@ -344,7 +307,7 @@ def _op_resample(df: pd.DataFrame, params: dict[str, Any], label: str) -> Operat
     frame = series.reset_index()
     frame.columns = [date_column, f"{column}_{agg}"]
     notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
-    return _frame_to_result(
+    return frame_to_result(
         frame, op="resample", label=label, n=len(subset), n_excluded=excluded, notes=notes
     )
 
@@ -375,14 +338,16 @@ def _op_correlation_matrix(df: pd.DataFrame, params: dict[str, Any], label: str)
                 r, p = stats.spearmanr(subset[a], subset[b])
             else:
                 r, p = stats.kendalltau(subset[a], subset[b])
-            pairs.append({"x": a, "y": b, "r": round(float(r), 4), "p_value": round(float(p), 6)})
+            # The p-value goes through unrounded so json_safe can keep its
+            # significant figures; see _op_crosstab.
+            pairs.append({"x": a, "y": b, "r": round(float(r), 4), "p_value": float(p)})
 
     notes = (
         [f"Excluded {excluded} row(s) with missing values in any selected column."]
         if excluded
         else []
     )
-    return _frame_to_result(
+    return frame_to_result(
         flat,
         op="correlation_matrix",
         label=label,
@@ -410,13 +375,13 @@ def _op_scatter_with_fit(df: pd.DataFrame, params: dict[str, Any], label: str) -
         "intercept": round(float(result.intercept), 6),
         "r": round(float(result.rvalue), 4),
         "r_squared": round(float(result.rvalue**2), 4),
-        "p_value": round(float(result.pvalue), 6),
+        "p_value": float(result.pvalue),
         "std_err": round(float(result.stderr), 6),
         "fit": f"{y_col} = {result.slope:.4g} × {x_col} + {result.intercept:.4g}",
     }
     notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
-    # Scatter payloads are capped by _frame_to_result; the fit is computed on all rows.
-    return _frame_to_result(
+    # Scatter payloads are capped by frame_to_result; the fit is computed on all rows.
+    return frame_to_result(
         subset,
         op="scatter_with_fit",
         label=label,
@@ -425,6 +390,64 @@ def _op_scatter_with_fit(df: pd.DataFrame, params: dict[str, Any], label: str) -
         notes=notes + ["The fitted line is computed on all complete rows, not just those shown."],
         stats_payload=stats_payload,
     )
+
+
+def _name_groups(labels: list[str]) -> str:
+    """Render a group list for prose, without pasting a hundred category names."""
+    if len(labels) <= MAX_NAMED_GROUPS:
+        return ", ".join(labels)
+    shown = ", ".join(labels[:MAX_NAMED_GROUPS])
+    return f"{shown} and {len(labels) - MAX_NAMED_GROUPS} more"
+
+
+def _comparison_test(
+    labels: list[str], groups: list[np.ndarray], too_small: list[str]
+) -> dict[str, Any]:
+    """Pick the test the usable groups support, and record what it left out.
+
+    Every branch carries ``groups_compared`` and ``groups_excluded`` so the
+    statistic can never be read as covering the whole summary table when it
+    does not. The two no-test branches return a stated reason rather than an
+    empty payload: "no test ran, and here is why" is information, silence is
+    not.
+    """
+    context = {"groups_compared": labels, "groups_excluded": too_small}
+    if len(groups) < 2:
+        excluded = f" ({_name_groups(too_small)})" if too_small else ""
+        return {
+            "test": "not computed",
+            "reason": (
+                f"only {len(groups)} group(s) hold at least {MIN_TESTABLE_GROUP_N} values, so "
+                f"there is nothing to compare; {len(too_small)} group(s){excluded} were too "
+                f"small to test"
+            ),
+            **context,
+        }
+    # A significance test needs variance somewhere. With every group constant,
+    # scipy returns NaN and warns; say so plainly instead of reporting an
+    # uncomputable test.
+    if all(float(np.std(values)) == 0.0 for values in groups):
+        return {
+            "test": "not computed",
+            "reason": "every group has zero variance, so no significance test applies",
+            **context,
+        }
+    if len(groups) == 2:
+        t_stat, p_value = stats.ttest_ind(groups[0], groups[1], equal_var=False)
+        return {
+            "test": f"Welch's t-test ({labels[0]} vs {labels[1]}, unequal variance)",
+            "statistic": round(float(t_stat), 4),
+            "p_value": float(p_value),
+            **context,
+        }
+    f_stat, p_value = stats.f_oneway(*groups)
+    return {
+        "test": f"one-way ANOVA across {len(groups)} groups ({_name_groups(labels)})",
+        "statistic": round(float(f_stat), 4),
+        "p_value": float(p_value),
+        "note": "ANOVA assumes similar variances across groups; check the std column.",
+        **context,
+    }
 
 
 def _op_group_comparison(df: pd.DataFrame, params: dict[str, Any], label: str) -> OperationResult:
@@ -455,44 +478,43 @@ def _op_group_comparison(df: pd.DataFrame, params: dict[str, Any], label: str) -
     summary["ci95_low"] = ci_low
     summary["ci95_high"] = ci_high
 
-    groups = [g.to_numpy() for _, g in grouped if len(g) > 1]
-    stats_payload: dict[str, Any] = {}
-    # A significance test needs variance somewhere. With every group constant,
-    # scipy returns NaN and warns; say so plainly instead of reporting an
-    # uncomputable test.
-    if groups and all(float(np.std(g)) == 0.0 for g in groups):
-        stats_payload = {
-            "test": "not computed",
-            "reason": "every group has zero variance, so no significance test applies",
-        }
-    elif len(groups) == 2:
-        t_stat, p_value = stats.ttest_ind(groups[0], groups[1], equal_var=False)
-        stats_payload = {
-            "test": "Welch's t-test (two groups, unequal variance)",
-            "statistic": round(float(t_stat), 4),
-            "p_value": round(float(p_value), 6),
-        }
-    elif len(groups) > 2:
-        f_stat, p_value = stats.f_oneway(*groups)
-        stats_payload = {
-            "test": "one-way ANOVA",
-            "statistic": round(float(f_stat), 4),
-            "p_value": round(float(p_value), 6),
-            "note": "ANOVA assumes similar variances across groups; check the std column.",
-        }
+    # A group of one contributes no variance, so no two-sample or one-way test
+    # can use it. Dropping it is right; dropping it silently is not — the
+    # summary table and the chart still show it, so the payload names the
+    # groups the test compared, the groups it did not, and reports n as the
+    # rows the statistic actually saw.
+    testable = [(str(key), values.to_numpy()) for key, values in grouped if len(values) > 1]
+    too_small = [str(key) for key, values in grouped if len(values) <= 1]
+    tested_labels = [name for name, _ in testable]
+    groups = [values for _, values in testable]
+    tested_rows = int(sum(values.size for values in groups))
+
+    stats_payload = _comparison_test(tested_labels, groups, too_small)
+    ran_a_test = stats_payload.get("p_value") is not None
 
     notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
-    return _frame_to_result(
+    if too_small and ran_a_test:
+        notes.append(
+            f"{len(too_small)} group(s) ({_name_groups(too_small)}) hold fewer than "
+            f"{MIN_TESTABLE_GROUP_N} values and were excluded from the significance test, "
+            f"removing {len(subset) - tested_rows} row(s) from its denominator. They remain "
+            f"in the summary table."
+        )
+    n = tested_rows if ran_a_test else len(subset)
+    return frame_to_result(
         summary,
         op="group_comparison",
         label=label,
-        n=len(subset),
-        n_excluded=excluded,
+        n=n,
+        n_excluded=len(df) - n,
         notes=notes,
         stats_payload=stats_payload,
     )
 
 
+# Tier 1 and Tier 2 live here; every heavier tier is registered from the module
+# that implements it, so this table stays the single place a spec's "op" is
+# resolved.
 _DISPATCH = {
     "describe": _op_describe,
     "groupby_aggregate": _op_groupby_aggregate,
@@ -505,6 +527,11 @@ _DISPATCH = {
     "correlation_matrix": _op_correlation_matrix,
     "scatter_with_fit": _op_scatter_with_fit,
     "group_comparison": _op_group_comparison,
+    **INFERENCE_OPERATIONS,
+    **CATEGORICAL_OPERATIONS,
+    **REGRESSION_OPERATIONS,
+    **TIMESERIES_OPERATIONS,
+    **SURVEY_OPERATIONS,
 }
 
 
@@ -536,7 +563,10 @@ def execute_spec(df: pd.DataFrame, spec: dict[str, Any]) -> list[OperationResult
 
         if filter_note:
             result.notes.insert(0, filter_note)
-        results.append(result)
+        # Stamped here rather than inside each handler: the handlers do not
+        # know their position in the plan, and this list is about to stop
+        # matching it as soon as anything fails.
+        results.append(with_spec_index(result, index))
 
     if not results:
         raise ExecutionError("; ".join(failures) or "spec contained no operations")
@@ -553,6 +583,17 @@ def execute_spec(df: pd.DataFrame, spec: dict[str, Any]) -> list[OperationResult
 _DEFAULT_CHART_Y: dict[str, str] = {
     "group_comparison": "mean",
     "describe": "mean",
+    # Tier 3 result tables lead with the group label and n, so column 1 is a
+    # sample size. Charting that under a title about means or rates is the bug
+    # this map exists to prevent.
+    "ttest": "mean",
+    "anova": "mean",
+    "kruskal": "median",
+    "mannwhitney": "median",
+    "wilcoxon": "median",
+    "proportion_test": "proportion",
+    "chi_square": "observed",
+    "normality_test": "mean",
 }
 
 
@@ -570,10 +611,17 @@ def build_chart(
     if not chart:
         return None
     index = chart.get("operation", 0)
-    if not isinstance(index, int) or not 0 <= index < len(results):
+    if not isinstance(index, int):
         return None
 
-    result = results[index]
+    # ``chart["operation"]`` names a position in the *spec*, and execute_spec
+    # drops failures from *results*. Indexing the list positionally therefore
+    # plots a different operation than the one the chart config asked for
+    # whenever anything earlier failed — a chart titled for one analysis
+    # carrying another's numbers.
+    result = next((entry for entry in results if entry.planned_at(index)), None)
+    if result is None:
+        return None
     if len(result.columns) < 2 or not result.rows:
         return None
 

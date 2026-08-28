@@ -51,11 +51,29 @@ class TestInferSchemaTypes:
         assert col["type"] == "datetime"
 
     def test_string_column(self):
-        names = ["Alice", "Bob", "Charlie", "Dave", "Eve",
-                 "Frank", "Grace", "Heidi", "Ivan", "Judy",
-                 "Karl", "Leo", "Mallory", "Niaj", "Olivia",
-                 "Peggy", "Rupert", "Sybil", "Trent", "Victor",
-                 "Walter"]
+        names = [
+            "Alice",
+            "Bob",
+            "Charlie",
+            "Dave",
+            "Eve",
+            "Frank",
+            "Grace",
+            "Heidi",
+            "Ivan",
+            "Judy",
+            "Karl",
+            "Leo",
+            "Mallory",
+            "Niaj",
+            "Olivia",
+            "Peggy",
+            "Rupert",
+            "Sybil",
+            "Trent",
+            "Victor",
+            "Walter",
+        ]
         df = pd.DataFrame({"name": names})
         schema = infer_schema(df)
         col = schema["columns"][0]

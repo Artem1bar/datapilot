@@ -1,4 +1,5 @@
 """Multi-sheet and multi-file support for datasets."""
+
 from __future__ import annotations
 
 import io
@@ -32,14 +33,16 @@ def get_sheet_summary(sheets: dict[str, pd.DataFrame]) -> list[dict[str, Any]]:
     """Return summary info for each sheet."""
     summaries = []
     for name, df in sheets.items():
-        summaries.append({
-            "name": name,
-            "row_count": len(df),
-            "col_count": len(df.columns),
-            "columns": list(df.columns),
-            "dtypes": {col: str(df[col].dtype) for col in df.columns},
-            "null_pct": round(float(df.isna().mean().mean()) * 100, 2),
-        })
+        summaries.append(
+            {
+                "name": name,
+                "row_count": len(df),
+                "col_count": len(df.columns),
+                "columns": list(df.columns),
+                "dtypes": {col: str(df[col].dtype) for col in df.columns},
+                "null_pct": round(float(df.isna().mean().mean()) * 100, 2),
+            }
+        )
     return summaries
 
 

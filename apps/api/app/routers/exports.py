@@ -74,7 +74,9 @@ async def create_export(
     except Exception as exc:
         logger.warning("Could not dispatch export task (Celery may be down): %s", exc)
 
-    logger.info("Export job %s created for dataset %s (format=%s)", job.id, dataset_id, body.format.value)
+    logger.info(
+        "Export job %s created for dataset %s (format=%s)", job.id, dataset_id, body.format.value
+    )
     return JobResponse.model_validate(job)
 
 
@@ -86,9 +88,7 @@ async def download_export(
 ) -> dict[str, str]:
     """Get a presigned download URL for a completed export."""
     # Fetch job and verify ownership
-    result = await db.execute(
-        select(Job).where(Job.id == job_id, Job.user_id == user.id)
-    )
+    result = await db.execute(select(Job).where(Job.id == job_id, Job.user_id == user.id))
     job = result.scalar_one_or_none()
     if job is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")

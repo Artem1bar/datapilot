@@ -18,6 +18,7 @@ from app.services.multi_sheet import (
 # get_sheet_summary
 # ---------------------------------------------------------------------------
 
+
 def test_get_sheet_summary_returns_one_entry_per_sheet() -> None:
     sheets = {
         "A": pd.DataFrame({"x": [1, 2], "y": [3, 4]}),
@@ -63,6 +64,7 @@ def test_get_sheet_summary_empty_dict() -> None:
 # ---------------------------------------------------------------------------
 # merge_dataframes
 # ---------------------------------------------------------------------------
+
 
 def test_merge_concat_stacks_rows() -> None:
     df1 = pd.DataFrame({"a": [1, 2]})
@@ -122,6 +124,7 @@ def test_merge_single_df_concat_returns_same_data() -> None:
 # _read_single — CSV and TSV
 # ---------------------------------------------------------------------------
 
+
 def _csv_bytes(content: str) -> bytes:
     return content.encode()
 
@@ -148,6 +151,7 @@ def test_read_single_tab_extension() -> None:
 
 def test_read_single_json() -> None:
     import json
+
     data = [{"k": 1}, {"k": 2}]
     json_bytes = json.dumps(data).encode()
     df = _read_single(json_bytes, "data.json")
@@ -166,6 +170,7 @@ def test_read_single_parquet() -> None:
 # ---------------------------------------------------------------------------
 # read_all_sheets — non-Excel fallback
 # ---------------------------------------------------------------------------
+
 
 def test_read_all_sheets_csv_returns_sheet1() -> None:
     csv = _csv_bytes("a,b\n1,2\n")

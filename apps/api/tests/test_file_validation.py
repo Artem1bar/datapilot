@@ -16,7 +16,7 @@ class TestValidateFileContent:
         assert validate_file_content(b'{"key": "value"}', "data.json") is True
 
     def test_json_valid_array(self):
-        assert validate_file_content(b'[1, 2, 3]', "data.json") is True
+        assert validate_file_content(b"[1, 2, 3]", "data.json") is True
 
     def test_json_invalid_magic(self):
         assert validate_file_content(b"not json", "data.json") is False

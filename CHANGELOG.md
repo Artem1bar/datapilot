@@ -9,6 +9,80 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+### Inferential statistics, assumption checks, and provenance (Phase 2)
+
+Phase 1 made the numbers real. Phase 2 makes them defensible: analysis can now
+test whether a difference is distinguishable from chance, and every answer
+carries the record of how it was produced.
+
+Eight inferential operations join the eleven descriptive ones:
+
+- `ttest` — one-sample, independent (Welch by default), or paired
+- `anova` — one-way, with Tukey HSD pairwise comparisons
+- `kruskal`, `mannwhitney`, `wilcoxon` — rank-based equivalents that assume no
+  normality, for skewed, ordinal, or small-n data
+- `chi_square` — independence (Cramér's V, plus an exact Fisher result on 2x2
+  tables) or goodness of fit against an even split
+- `proportion_test` — one- and two-sample, with Wilson and Newcombe intervals
+- `normality_test` — the check behind choosing a t-test over a rank test
+
+**Every test reports four things beside its statistic**: an effect size with
+Cohen's conventional magnitude label, a confidence interval, explicit assumption
+checks, and n. A p-value alone invites the two commonest mistakes in applied
+statistics — reading significance as importance, and running a test whose
+assumptions the data violate.
+
+**Assumption checks are three-valued.** `true`, `false`, and `null` for "could
+not be evaluated", which is not the same as passing. The narrator prompt now
+requires a failed check to appear in the same breath as the finding it
+undermines, rather than as a closing caveat.
+
+**Operations refuse rather than degrade.** An independent t-test over three
+groups raises and names ANOVA instead of silently comparing the first two. The
+validator learned the actual values of low-cardinality columns, so a filter on
+`"Weest"` or a `success_value` of `"Yes"` where the data says `"yes"` is
+rejected with the real spellings — a rejection the model can act on, instead of
+an empty result it cannot explain.
+
+**Multiple comparisons.** P-values across the tests in one answer are adjusted by
+Benjamini-Hochberg, and the narrator treats the adjusted value as the one that
+decides significance.
+
+**Provenance.** Every computed answer now returns a record of what ran — the
+operations and their parameters, n and n_excluded per operation, every
+assumption check, and the exact pandas/numpy/scipy/Python versions — rendered as
+a markdown methods note. Nothing in that path calls a model: a methods note
+written by the thing whose trustworthiness it attests to would be worth nothing.
+It surfaces in the chat as a collapsible **Methods** card with a copy button.
+The field is additive (`provenance`, null on a refusal), so existing clients are
+unaffected.
+
+New modules, split so each stays readable: `analysis_stats.py` (effect sizes,
+intervals, assumption checks as pure array functions), `analysis_prep.py` (group
+splitting shared by every test), `analysis_inference.py` (mean and rank
+comparisons), `analysis_categorical.py` (counts and proportions),
+`analysis_provenance.py` (the record and its rendering), `analysis_result.py`
+(the shared result type). No new dependencies.
+
+Two defects found and fixed while verifying:
+
+- P-values below the rounding precision serialized as `0.0`. A methods note
+  reading `p = 0` claims certainty no test can support. Values below 1e-4 now
+  keep significant figures rather than decimal places.
+- Dropped incomplete pairs were reported as a *failed* assumption, which under
+  the narrator's rules would have had routine missingness described as
+  undermining the result. It is now "not evaluated", with the count and the
+  condition under which it would actually matter.
+
+Verified end-to-end against a 600-row dataset: t/F/z/chi-square statistics,
+degrees of freedom, Cohen's d, eta and omega squared, Cramér's V, Cohen's h,
+both CI bounds, and every group mean and proportion matched statistics computed
+independently from the raw arrays. `z²` equalled the uncorrected chi-square on
+the same table, as it must.
+
+Backend tests: 751 → 875 (89% coverage across the analysis modules). Frontend:
+128 → 139.
+
 ### Analysis now computes instead of generating (Phase 1)
 
 Previously `analyze_data()` sent the profile and 20 sample rows to a model and

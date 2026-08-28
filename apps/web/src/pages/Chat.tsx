@@ -8,15 +8,19 @@ import { WorkflowStepper } from "@/components/workflow/WorkflowStepper";
 import { api } from "@/lib/api";
 import sampleCsv from "@/assets/sample-sales.csv?raw";
 import { detectIntent, intentRequiresData } from "@/lib/intent";
-import { mapComparisonReport, type RawComparisonReport } from "@/lib/comparison";
+import {
+  mapComparisonReport,
+  type RawComparisonReport,
+} from "@/lib/comparison";
 import { progressStageLabel } from "@/lib/progress";
+import { toMethodsCard, type AnalysisTurn } from "@/lib/analysis-methods";
+import { toResultsCard } from "@/lib/analysis-results";
 import { validateUploadFile } from "@/lib/upload";
 import type {
   ActiveCleaningJob,
   DatasetResponse,
   JobResponse,
   CleaningStep,
-  ChartConfig,
   InspectionSummaryPayload,
   CleaningPlanPayload,
   CleaningProgressPayload,
@@ -41,16 +45,20 @@ const watchedCleaningJobs = new Set<string>();
 
 export default function Chat() {
   const activeSessionId = useSessionStore((s) => s.activeSessionId);
-  const EMPTY_MESSAGES: readonly import("@/types").ChatMessageV2[] = useMemo(() => [], []);
-  const rawMessages = useSessionStore(
-    (s) => (activeSessionId ? s.messagesBySession[activeSessionId] : undefined),
+  const EMPTY_MESSAGES: readonly import("@/types").ChatMessageV2[] = useMemo(
+    () => [],
+    [],
+  );
+  const rawMessages = useSessionStore((s) =>
+    activeSessionId ? s.messagesBySession[activeSessionId] : undefined,
   );
   const messages = rawMessages ?? EMPTY_MESSAGES;
   const workflowState = useSessionStore((s) =>
     s.activeSessionId ? s.workflowStateBySession[s.activeSessionId] : undefined,
   );
   const hasDataset = useSessionStore(
-    (s) => !!s.sessions.find((sess) => sess.id === s.activeSessionId)?.datasetId,
+    (s) =>
+      !!s.sessions.find((sess) => sess.id === s.activeSessionId)?.datasetId,
   );
   const addMessage = useSessionStore((s) => s.addMessage);
   const createSession = useSessionStore((s) => s.createSession);
@@ -77,7 +85,10 @@ export default function Chat() {
   // Clear charts only when the session *actually* changes (not on initial mount)
   const prevSessionRef = useRef(activeSessionId);
   useEffect(() => {
-    if (prevSessionRef.current !== activeSessionId && prevSessionRef.current !== null) {
+    if (
+      prevSessionRef.current !== activeSessionId &&
+      prevSessionRef.current !== null
+    ) {
       clearCharts();
     }
     prevSessionRef.current = activeSessionId;
@@ -88,7 +99,9 @@ export default function Chat() {
   // backend kept working through the refresh — this reconnects the UI to it.
   useEffect(() => {
     const state = useSessionStore.getState();
-    for (const [sessionId, job] of Object.entries(state.activeCleaningJobsBySession)) {
+    for (const [sessionId, job] of Object.entries(
+      state.activeCleaningJobsBySession,
+    )) {
       if (watchedCleaningJobs.has(job.jobId)) continue;
       state.startWorkflow(sessionId, job.datasetId, job.datasetFilename);
       state.setWorkflowStep(sessionId, "clean", "active");
@@ -122,7 +135,10 @@ export default function Chat() {
       }
 
       setSending(true);
-      addMessage(sessionId, createMessage("system", `Uploading **${file.name}**...`));
+      addMessage(
+        sessionId,
+        createMessage("system", `Uploading **${file.name}**...`),
+      );
 
       try {
         // Upload file directly through the backend (avoids CORS with MinIO)
@@ -138,7 +154,10 @@ export default function Chat() {
         renameSession(sessionId, file.name);
 
         // 4. Wait for profiling
-        addMessage(sessionId, createMessage("system", "Profiling your dataset..."));
+        addMessage(
+          sessionId,
+          createMessage("system", "Profiling your dataset..."),
+        );
         const ready = await pollDatasetReady(datasetId);
 
         // 5. Show ready message — don't trigger cleaning, let user choose
@@ -152,13 +171,22 @@ export default function Chat() {
       } catch (err) {
         addMessage(
           sessionId,
-          createMessage("system", `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+          createMessage(
+            "system",
+            `Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+          ),
         );
       } finally {
         setSending(false);
       }
     },
-    [activeSessionId, addMessage, createSession, setSessionDatasetId, renameSession],
+    [
+      activeSessionId,
+      addMessage,
+      createSession,
+      setSessionDatasetId,
+      renameSession,
+    ],
   );
 
   /* ── Table paste handler ─────────────────────────────────────────────── */
@@ -178,7 +206,10 @@ export default function Chat() {
             row
               .split("\t")
               .map((cell) => {
-                const needsQuote = cell.includes(",") || cell.includes('"') || cell.includes("\n");
+                const needsQuote =
+                  cell.includes(",") ||
+                  cell.includes('"') ||
+                  cell.includes("\n");
                 return needsQuote ? `"${cell.replaceAll('"', '""')}"` : cell;
               })
               .join(","),
@@ -223,7 +254,10 @@ export default function Chat() {
     if (!datasetId && intentRequiresData(intent)) {
       addMessage(
         sessionId,
-        createMessage("assistant", "I need some data to work with. Please attach a CSV or Excel file using the **+** button, then try again."),
+        createMessage(
+          "assistant",
+          "I need some data to work with. Please attach a CSV or Excel file using the **+** button, then try again.",
+        ),
       );
       return;
     }
@@ -236,7 +270,10 @@ export default function Chat() {
     if (isManipulationIntent && datasetId) {
       setSending(true);
       try {
-        addMessage(sessionId, createMessage("system", "Parsing your edit command..."));
+        addMessage(
+          sessionId,
+          createMessage("system", "Parsing your edit command..."),
+        );
 
         const preview = await api
           .post(`manipulation/${datasetId}/parse`, {
@@ -244,7 +281,11 @@ export default function Chat() {
             timeout: 60_000,
           })
           .json<{
-            operations: Array<{ op_type: string; params: Record<string, unknown>; description: string }>;
+            operations: Array<{
+              op_type: string;
+              params: Record<string, unknown>;
+              description: string;
+            }>;
             preview_before: Record<string, unknown>[];
             preview_after: Record<string, unknown>[];
             affected_columns: string[];
@@ -256,7 +297,7 @@ export default function Chat() {
         const previewCard: ManipulationPreviewPayload = {
           type: "manipulation_preview",
           command: text,
-          operations: preview.operations.map(op => ({
+          operations: preview.operations.map((op) => ({
             opType: op.op_type,
             params: op.params,
             description: op.description,
@@ -270,7 +311,13 @@ export default function Chat() {
         };
         addMessage(sessionId, createMessage("assistant", "", previewCard));
       } catch (err) {
-        addMessage(sessionId, createMessage("system", `Edit failed: ${err instanceof Error ? err.message : "Unknown error"}`));
+        addMessage(
+          sessionId,
+          createMessage(
+            "system",
+            `Edit failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+          ),
+        );
       } finally {
         setSending(false);
       }
@@ -285,7 +332,7 @@ export default function Chat() {
             json: { message: text },
             timeout: 180_000,
           })
-          .json<{ id: string; messages_json: Array<{ role: string; content: string; charts?: ChartConfig[] }> }>();
+          .json<{ id: string; messages_json: Array<AnalysisTurn> }>();
 
         const lastMsg = resp.messages_json[resp.messages_json.length - 1];
         if (lastMsg && lastMsg.role === "assistant") {
@@ -294,11 +341,27 @@ export default function Chat() {
             addCharts(lastMsg.charts);
             setChartPanelOpen(true);
           }
+          // Results before methods: the statistics are the answer, and the
+          // record of how they were produced sits under them.
+          const results = toResultsCard(
+            lastMsg.provenance?.operations,
+            lastMsg.tables,
+          );
+          if (results) {
+            addMessage(sessionId, createMessage("assistant", "", results));
+          }
+          const methods = toMethodsCard(lastMsg.provenance);
+          if (methods) {
+            addMessage(sessionId, createMessage("assistant", "", methods));
+          }
         }
       } catch (err) {
         addMessage(
           sessionId,
-          createMessage("system", `Analysis error: ${err instanceof Error ? err.message : "Unknown error"}`),
+          createMessage(
+            "system",
+            `Analysis error: ${err instanceof Error ? err.message : "Unknown error"}`,
+          ),
         );
       } finally {
         setSending(false);
@@ -315,7 +378,7 @@ export default function Chat() {
             json: { message: text },
             timeout: 180_000,
           })
-          .json<{ id: string; messages_json: Array<{ role: string; content: string; charts?: ChartConfig[] }> }>();
+          .json<{ id: string; messages_json: Array<AnalysisTurn> }>();
 
         const lastMsg = resp.messages_json[resp.messages_json.length - 1];
         if (lastMsg && lastMsg.role === "assistant") {
@@ -324,11 +387,27 @@ export default function Chat() {
             addCharts(lastMsg.charts);
             setChartPanelOpen(true);
           }
+          // Results before methods: the statistics are the answer, and the
+          // record of how they were produced sits under them.
+          const results = toResultsCard(
+            lastMsg.provenance?.operations,
+            lastMsg.tables,
+          );
+          if (results) {
+            addMessage(sessionId, createMessage("assistant", "", results));
+          }
+          const methods = toMethodsCard(lastMsg.provenance);
+          if (methods) {
+            addMessage(sessionId, createMessage("assistant", "", methods));
+          }
         }
       } catch (err) {
         addMessage(
           sessionId,
-          createMessage("system", `Error: ${err instanceof Error ? err.message : "Unknown error"}`),
+          createMessage(
+            "system",
+            `Error: ${err instanceof Error ? err.message : "Unknown error"}`,
+          ),
         );
       } finally {
         setSending(false);
@@ -336,11 +415,22 @@ export default function Chat() {
     } else {
       addMessage(
         sessionId,
-        createMessage("assistant", "Welcome! Upload a CSV or Excel file to get started. Click the **+** button or drag a file into the chat."),
+        createMessage(
+          "assistant",
+          "Welcome! Upload a CSV or Excel file to get started. Click the **+** button or drag a file into the chat.",
+        ),
       );
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- runCleaningWorkflow is a stable inner fn; addCharts/setChartPanelOpen are stable Zustand actions
-  }, [input, sending, activeSessionId, addMessage, createSession, addCharts, setChartPanelOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runCleaningWorkflow is a stable inner fn; addCharts/setChartPanelOpen are stable Zustand actions
+  }, [
+    input,
+    sending,
+    activeSessionId,
+    addMessage,
+    createSession,
+    addCharts,
+    setChartPanelOpen,
+  ]);
 
   /* ── Cleaning workflow ───────────────────────────────────────────────── */
 
@@ -349,15 +439,21 @@ export default function Chat() {
 
     try {
       // Fetch dataset info
-      const dataset = await api.get(`datasets/${datasetId}`).json<DatasetResponse>();
+      const dataset = await api
+        .get(`datasets/${datasetId}`)
+        .json<DatasetResponse>();
       startWorkflow(sessionId, datasetId, dataset.filename);
 
       // ── Step 1: Inspect ──────────────────────────────────────
       setWorkflowStep(sessionId, "inspect", "active");
-      addMessage(sessionId, createMessage("system", "Inspecting your dataset..."));
+      addMessage(
+        sessionId,
+        createMessage("system", "Inspecting your dataset..."),
+      );
 
       const profile = dataset.profile_json as Record<string, unknown> | null;
-      const columns = profile?.columns as Record<string, Record<string, unknown>> | undefined;
+      const columns = profile?.columns as
+        Record<string, Record<string, unknown>> | undefined;
 
       const inspectionCard: InspectionSummaryPayload = {
         type: "inspection_summary",
@@ -380,7 +476,10 @@ export default function Chat() {
 
       // ── Step 2: Plan ─────────────────────────────────────────
       setWorkflowStep(sessionId, "plan", "active");
-      addMessage(sessionId, createMessage("system", "Generating cleaning plan..."));
+      addMessage(
+        sessionId,
+        createMessage("system", "Generating cleaning plan..."),
+      );
 
       const planJob = await api
         .post(`cleaning/${datasetId}/plan`, { json: {}, timeout: 180_000 })
@@ -388,16 +487,22 @@ export default function Chat() {
 
       // The plan endpoint returns a JobResponse — steps live inside result_json
       const planData = planJob.result_json as {
-        steps: Array<CleaningStep & { confidence?: number; rationale?: string }>;
+        steps: Array<
+          CleaningStep & { confidence?: number; rationale?: string }
+        >;
         summary: string;
       } | null;
       if (!planData?.steps?.length) {
-        throw new Error("No cleaning steps were generated. Try again or check your dataset.");
+        throw new Error(
+          "No cleaning steps were generated. Try again or check your dataset.",
+        );
       }
 
       const planCard: CleaningPlanPayload = {
         type: "cleaning_plan",
-        summary: planData.summary ?? `AI-generated cleaning plan with ${planData.steps.length} steps`,
+        summary:
+          planData.summary ??
+          `AI-generated cleaning plan with ${planData.steps.length} steps`,
         datasetId,
         steps: planData.steps,
       };
@@ -414,7 +519,11 @@ export default function Chat() {
           type: "error",
           title: "Couldn't generate a cleaning plan",
           message: err instanceof Error ? err.message : "Unknown error",
-          retry: { action: "retry_clean_plan", data: { datasetId }, label: "Try again" },
+          retry: {
+            action: "retry_clean_plan",
+            data: { datasetId },
+            label: "Try again",
+          },
         }),
       );
       clearWorkflow(sessionId);
@@ -434,7 +543,9 @@ export default function Chat() {
     setSending(true);
 
     try {
-      const dataset = await api.get(`datasets/${datasetId}`).json<DatasetResponse>();
+      const dataset = await api
+        .get(`datasets/${datasetId}`)
+        .json<DatasetResponse>();
 
       // ── Step 3: Clean ────────────────────────────────────────
       setWorkflowStep(sessionId, "clean", "active");
@@ -482,7 +593,11 @@ export default function Chat() {
           type: "error",
           title: "Cleaning failed",
           message: err instanceof Error ? err.message : "Unknown error",
-          retry: { action: "apply_cleaning", data: { datasetId, steps }, label: "Retry cleaning" },
+          retry: {
+            action: "apply_cleaning",
+            data: { datasetId, steps },
+            label: "Retry cleaning",
+          },
         }),
       );
       clearWorkflow(sessionId);
@@ -497,7 +612,9 @@ export default function Chat() {
   async function applyRecipe(recipeId: string) {
     const sessionId = activeSessionId;
     if (!sessionId) return;
-    const session = useSessionStore.getState().sessions.find((s) => s.id === sessionId);
+    const session = useSessionStore
+      .getState()
+      .sessions.find((s) => s.id === sessionId);
     const datasetId = session?.datasetId;
     if (!datasetId) return;
 
@@ -554,7 +671,11 @@ export default function Chat() {
           type: "error",
           title: "Couldn't apply the recipe",
           message: err instanceof Error ? err.message : "Unknown error",
-          retry: { action: "apply_recipe", data: { recipeId }, label: "Try again" },
+          retry: {
+            action: "apply_recipe",
+            data: { recipeId },
+            label: "Try again",
+          },
         }),
       );
       clearWorkflow(sessionId);
@@ -602,10 +723,12 @@ export default function Chat() {
       addMessage(sessionId, createMessage("system", "Validating results..."));
 
       const result = jobResult.result_json as Record<string, unknown> | null;
-      const verification = result?.verification as Record<string, unknown> | undefined;
+      const verification = result?.verification as
+        Record<string, unknown> | undefined;
 
       if (verification) {
-        const stepResults = (verification.step_results as Array<Record<string, unknown>>) ?? [];
+        const stepResults =
+          (verification.step_results as Array<Record<string, unknown>>) ?? [];
         const validationCard: ValidationSummaryPayload = {
           type: "validation_summary",
           results: stepResults.map((r, idx) => ({
@@ -613,7 +736,9 @@ export default function Chat() {
             passed: (r.passed as boolean) ?? false,
             detail: (r.actual as string) ?? null,
           })),
-          overallPassed: (verification.overall_passed as boolean) ?? stepResults.every((r) => r.passed),
+          overallPassed:
+            (verification.overall_passed as boolean) ??
+            stepResults.every((r) => r.passed),
         };
         addMessage(sessionId, createMessage("assistant", "", validationCard));
       }
@@ -628,7 +753,8 @@ export default function Chat() {
       const remediationApplied = !!(
         verification?.agent_assessment as Record<string, unknown> | undefined
       )?.remediation_applied;
-      const unresolvableFlags = (verification?.unresolvable_flags as string[] | undefined) ?? [];
+      const unresolvableFlags =
+        (verification?.unresolvable_flags as string[] | undefined) ?? [];
 
       const resultsCard: CleaningResultsPayload = {
         type: "cleaning_results",
@@ -709,9 +835,13 @@ export default function Chat() {
         // "Applied" across remounts instead of becoming re-applyable.
         if (messageId) {
           const store = useSessionStore.getState();
-          const msg = (store.messagesBySession[sessionId] ?? []).find((m) => m.id === messageId);
+          const msg = (store.messagesBySession[sessionId] ?? []).find(
+            (m) => m.id === messageId,
+          );
           if (msg?.card?.type === "cleaning_plan") {
-            store.updateMessage(sessionId, messageId, { card: { ...msg.card, applied: true } });
+            store.updateMessage(sessionId, messageId, {
+              card: { ...msg.card, applied: true },
+            });
           }
         }
         await applyCleaningSteps(sessionId, datasetId, steps);
@@ -732,12 +862,18 @@ export default function Chat() {
         if (!jobId) return;
 
         setSending(true);
-        addMessage(sessionId, createMessage("system", "Comparing before and after..."));
+        addMessage(
+          sessionId,
+          createMessage("system", "Comparing before and after..."),
+        );
         try {
           const raw = await api
             .get(`cleaning/${jobId}/comparison`, { timeout: 60_000 })
             .json<RawComparisonReport>();
-          addMessage(sessionId, createMessage("assistant", "", mapComparisonReport(raw)));
+          addMessage(
+            sessionId,
+            createMessage("assistant", "", mapComparisonReport(raw)),
+          );
         } catch (err) {
           addMessage(
             sessionId,
@@ -756,7 +892,10 @@ export default function Chat() {
       if (action === "revert_cleaning" && data) {
         const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
-        const { jobId, messageId } = data as { jobId?: string; messageId?: string };
+        const { jobId, messageId } = data as {
+          jobId?: string;
+          messageId?: string;
+        };
         if (!jobId) return;
 
         setSending(true);
@@ -767,16 +906,23 @@ export default function Chat() {
           // Mark the results card reverted so the button doesn't reappear.
           if (messageId) {
             const store = useSessionStore.getState();
-            const msg = (store.messagesBySession[sessionId] ?? []).find((m) => m.id === messageId);
+            const msg = (store.messagesBySession[sessionId] ?? []).find(
+              (m) => m.id === messageId,
+            );
             if (msg?.card?.type === "cleaning_results") {
-              store.updateMessage(sessionId, messageId, { card: { ...msg.card, reverted: true } });
+              store.updateMessage(sessionId, messageId, {
+                card: { ...msg.card, reverted: true },
+              });
             }
           }
           addMessage(sessionId, createMessage("system", resp.message));
         } catch (err) {
           addMessage(
             sessionId,
-            createMessage("system", `Revert failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+            createMessage(
+              "system",
+              `Revert failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+            ),
           );
         } finally {
           setSending(false);
@@ -796,11 +942,16 @@ export default function Chat() {
         setSending(true);
         try {
           const recipe = await api
-            .post("recipes/", { json: { name, job_id: jobId }, timeout: 30_000 })
+            .post("recipes/", {
+              json: { name, job_id: jobId },
+              timeout: 30_000,
+            })
             .json<{ id: string; name: string }>();
           if (messageId) {
             const store = useSessionStore.getState();
-            const msg = (store.messagesBySession[sessionId] ?? []).find((m) => m.id === messageId);
+            const msg = (store.messagesBySession[sessionId] ?? []).find(
+              (m) => m.id === messageId,
+            );
             if (msg?.card?.type === "cleaning_results") {
               store.updateMessage(sessionId, messageId, {
                 card: { ...msg.card, savedRecipeName: recipe.name },
@@ -817,7 +968,10 @@ export default function Chat() {
         } catch (err) {
           addMessage(
             sessionId,
-            createMessage("system", `Couldn't save the recipe: ${err instanceof Error ? err.message : "Unknown error"}`),
+            createMessage(
+              "system",
+              `Couldn't save the recipe: ${err instanceof Error ? err.message : "Unknown error"}`,
+            ),
           );
         } finally {
           setSending(false);
@@ -835,7 +989,13 @@ export default function Chat() {
         setSending(true);
         addMessage(sessionId, createMessage("system", "Applying changes..."));
         try {
-          const operations = (data as Array<{ opType: string; params: Record<string, unknown>; description: string }>).map(op => ({
+          const operations = (
+            data as Array<{
+              opType: string;
+              params: Record<string, unknown>;
+              description: string;
+            }>
+          ).map((op) => ({
             op_type: op.opType,
             params: op.params,
             description: op.description,
@@ -919,9 +1079,21 @@ export default function Chat() {
               sample_rows: Record<string, unknown>[];
             }>();
 
-          addMessage(sessionId, createMessage("system", `Undo complete — restored to ${result.new_row_count} rows, ${result.new_col_count} columns.`));
+          addMessage(
+            sessionId,
+            createMessage(
+              "system",
+              `Undo complete — restored to ${result.new_row_count} rows, ${result.new_col_count} columns.`,
+            ),
+          );
         } catch (err) {
-          addMessage(sessionId, createMessage("system", `Undo failed: ${err instanceof Error ? err.message : "Unknown error"}`));
+          addMessage(
+            sessionId,
+            createMessage(
+              "system",
+              `Undo failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+            ),
+          );
         } finally {
           setSending(false);
         }
@@ -933,12 +1105,9 @@ export default function Chat() {
 
   /* ── Chip click ──────────────────────────────────────────────────────── */
 
-  const handleChipClick = useCallback(
-    (text: string) => {
-      setInput(text);
-    },
-    [],
-  );
+  const handleChipClick = useCallback((text: string) => {
+    setInput(text);
+  }, []);
 
   /* ── Render ──────────────────────────────────────────────────────────── */
 
@@ -954,7 +1123,10 @@ export default function Chat() {
             transition={{ type: "spring", stiffness: 300, damping: 30 }}
             className="border-b border-[var(--line)] bg-[var(--surface-primary)] px-4 py-2 overflow-hidden"
           >
-            <WorkflowStepper steps={workflowState.steps} filename={workflowState.datasetFilename} />
+            <WorkflowStepper
+              steps={workflowState.steps}
+              filename={workflowState.datasetFilename}
+            />
           </motion.div>
         )}
       </AnimatePresence>
@@ -992,10 +1164,15 @@ export default function Chat() {
 
 /* ── Polling helpers ──────────────────────────────────────────────────── */
 
-async function pollDatasetReady(datasetId: string, maxAttempts = 30): Promise<DatasetResponse> {
+async function pollDatasetReady(
+  datasetId: string,
+  maxAttempts = 30,
+): Promise<DatasetResponse> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 2000));
-    const dataset = await api.get(`datasets/${datasetId}`).json<DatasetResponse>();
+    const dataset = await api
+      .get(`datasets/${datasetId}`)
+      .json<DatasetResponse>();
     if (dataset.status === "ready") return dataset;
     if (dataset.status === "error") throw new Error("Profiling failed");
   }
@@ -1016,7 +1193,8 @@ async function pollJob(
       error_text: string | null;
     }>();
     if (job.status === "completed") return job;
-    if (job.status === "failed") throw new Error(job.error_text ?? "Job failed");
+    if (job.status === "failed")
+      throw new Error(job.error_text ?? "Job failed");
     onProgress?.(job.progress ?? 0);
   }
   throw new Error("Job timed out");

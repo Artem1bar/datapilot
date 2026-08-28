@@ -31,12 +31,15 @@ import pandas as pd
 from anthropic import Anthropic
 
 from app.config import settings
+from app.services.analysis_briefing import briefing_text
+from app.services.analysis_codegen import export_code, unsupported_operations
 from app.services.analysis_executor import (
     ExecutionError,
     OperationResult,
     build_chart,
     execute_spec,
 )
+from app.services.analysis_provenance import build_provenance, multiple_comparison_adjustment
 from app.services.analysis_spec import ColumnRoles, describe_capabilities, validate_spec
 from app.services.structured_output import complete_text
 
@@ -57,6 +60,11 @@ MAX_PLAN_ATTEMPTS = 3
 PLANNER_SAMPLE_ROWS = 10
 
 _UNAVAILABLE = "Sorry, the analysis service is temporarily unavailable."
+
+# Languages the executed spec is exported to, so a researcher can rerun the
+# analysis in their own environment and confirm the number. Generated from the
+# spec that already ran, not from the prose.
+EXPORT_LANGUAGES = ("python", "r")
 
 
 def _get_client() -> Anthropic:
@@ -123,6 +131,9 @@ def _build_planner_context(profile_json: dict[str, Any], df: pd.DataFrame) -> st
             "Column dtypes (authoritative — the validator uses these):",
             json.dumps(dtypes, indent=2, default=str),
             "",
+            "=== Structure ===",
+            _briefing(df),
+            "",
             "=== Profile ===",
             json.dumps(profile_json, indent=2, default=str),
             "",
@@ -130,6 +141,39 @@ def _build_planner_context(profile_json: dict[str, Any], df: pd.DataFrame) -> st
             json.dumps(sample, indent=2, default=str),
         ]
     )
+
+
+def _briefing(df: pd.DataFrame) -> str:
+    """Describe the dataset's analytic structure for the planner.
+
+    Wrapped because this runs on every turn in the request path: a briefing that
+    fails must cost the planner some context, not the user their answer.
+    """
+    try:
+        return briefing_text(df)
+    except Exception:
+        logger.exception("Dataset briefing could not be built")
+        return "(structural summary unavailable)"
+
+
+def _exported_code(spec: dict[str, Any], question: str) -> dict[str, Any]:
+    """Render the executed spec as runnable scripts, per language.
+
+    The trust bridge: a reader can rerun this and get the same number, or find
+    out that they cannot. Operations with no equivalent are named rather than
+    quietly dropped, because an export that looks complete and is not is worse
+    than one that admits the gap.
+    """
+    code: dict[str, Any] = {}
+    for language in EXPORT_LANGUAGES:
+        try:
+            code[language] = export_code(spec, language=language, question=question)
+            missing = unsupported_operations(spec, language=language)
+            if missing:
+                code[f"{language}_incomplete"] = sorted(set(missing))
+        except Exception:
+            logger.exception("Code export failed for %s", language)
+    return code
 
 
 def generate_spec(
@@ -242,14 +286,26 @@ def _results_payload(results: list[OperationResult]) -> str:
     )
 
 
-def narrate_results(question: str, spec: dict[str, Any], results: list[OperationResult]) -> str:
+def narrate_results(
+    question: str,
+    spec: dict[str, Any],
+    results: list[OperationResult],
+    adjustment: dict[str, Any] | None = None,
+) -> str:
     """Turn computed results into prose. The model sees numbers, never raw data."""
     system = _load_prompt(_NARRATE_PROMPT_PATH)
-    payload = (
-        f"=== Question ===\n{question}\n\n"
-        f"=== Why these operations ===\n{spec.get('rationale', '(not stated)')}\n\n"
-        f"=== Computed results ===\n{_results_payload(results)}"
-    )
+    sections = [
+        f"=== Question ===\n{question}",
+        f"=== Why these operations ===\n{spec.get('rationale', '(not stated)')}",
+        f"=== Computed results ===\n{_results_payload(results)}",
+    ]
+    if adjustment:
+        # Reporting several raw p-values from one dataset as if each stood
+        # alone is how a chat interface manufactures a false positive.
+        sections.append(
+            "=== Multiple comparisons ===\n" + json.dumps(adjustment, indent=2, default=str)
+        )
+    payload = "\n\n".join(sections)
 
     raw = complete_text(
         _get_client(),
@@ -278,11 +334,14 @@ def analyze_data(
     profile_json: dict[str, Any],
     df: pd.DataFrame,
     history: list[dict[str, Any]],
+    filename: str | None = None,
 ) -> dict[str, Any]:
     """Answer *question* about *df* by computing, then explaining.
 
-    Returns the API's established shape — ``{answer, charts, tables}`` — so the
-    frontend contract is unchanged. What changed is that the values are measured.
+    Returns ``{answer, charts, tables, provenance}``. The first three are the
+    API's established shape; ``provenance`` is the record of what actually ran —
+    operations, denominators, assumption checks, library versions — rendered as
+    a methods note. It is additive, so existing clients are unaffected.
 
     This is a sync function — call via ``asyncio.to_thread()`` from async code.
     """
@@ -290,13 +349,13 @@ def analyze_data(
         spec = generate_spec(question, profile_json, df, history)
     except Exception:
         logger.exception("Analysis planning failed")
-        return {"answer": _UNAVAILABLE, "charts": [], "tables": []}
+        return {"answer": _UNAVAILABLE, "charts": [], "tables": [], "provenance": None}
 
     if spec.get("refusal"):
         # A refusal is a real answer: the model determined the data cannot
         # support the question. Surface it rather than inventing a substitute.
         logger.info("Analysis declined: %s", str(spec["refusal"])[:200])
-        return {"answer": str(spec["refusal"]), "charts": [], "tables": []}
+        return {"answer": str(spec["refusal"]), "charts": [], "tables": [], "provenance": None}
 
     try:
         results = execute_spec(df, spec)
@@ -309,13 +368,15 @@ def analyze_data(
             ),
             "charts": [],
             "tables": [],
+            "provenance": None,
         }
     except Exception:
         logger.exception("Analysis execution raised unexpectedly")
-        return {"answer": _UNAVAILABLE, "charts": [], "tables": []}
+        return {"answer": _UNAVAILABLE, "charts": [], "tables": [], "provenance": None}
 
+    adjustment = multiple_comparison_adjustment(results)
     try:
-        answer = narrate_results(question, spec, results)
+        answer = narrate_results(question, spec, results, adjustment)
     except Exception:
         logger.exception("Analysis narration failed")
         # The computation succeeded; returning the tables without prose beats
@@ -326,8 +387,22 @@ def analyze_data(
         )
 
     chart = build_chart(spec.get("chart"), results)
+    try:
+        provenance = build_provenance(
+            question=question, spec=spec, results=results, df=df, filename=filename
+        )
+    except Exception:
+        # Provenance is a record of work already done; failing to render it must
+        # not discard the results it describes.
+        logger.exception("Analysis provenance could not be built")
+        provenance = None
+
+    if provenance is not None:
+        provenance["code"] = _exported_code(spec, question)
+
     return {
         "answer": answer,
         "charts": [chart] if chart else [],
         "tables": [result.to_table() for result in results],
+        "provenance": provenance,
     }

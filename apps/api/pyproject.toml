@@ -44,6 +44,9 @@ dependencies = [
     # Statistics — correlation p-values, t-tests, ANOVA, chi-square, OLS fits
     # for the analysis pipeline (see docs/ANALYSIS_STATISTICS_SCOPE.md).
     "scipy>=1.14.0",
+    # Regression and time series — robust standard errors, GLM families,
+    # quantile regression, STL decomposition, ARIMA, stationarity tests.
+    "statsmodels>=0.14.4",
     # WebSocket
     "websockets>=14.0",
     "python-multipart>=0.0.32",

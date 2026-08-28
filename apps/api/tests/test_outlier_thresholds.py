@@ -21,21 +21,30 @@ from app.services.cleaning import execute_cleaning_plan
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _run_flag(df: pd.DataFrame, column: str, **params):
-    steps = [{"operation": "flag_extreme_outliers", "column": column,
-               "params": params, "description": "test"}]
+    steps = [
+        {
+            "operation": "flag_extreme_outliers",
+            "column": column,
+            "params": params,
+            "description": "test",
+        }
+    ]
     return execute_cleaning_plan(df, steps)
 
 
 def _run_remove(df: pd.DataFrame, column: str):
-    steps = [{"operation": "remove_outliers", "column": column,
-               "params": {}, "description": "test"}]
+    steps = [
+        {"operation": "remove_outliers", "column": column, "params": {}, "description": "test"}
+    ]
     return execute_cleaning_plan(df, steps)
 
 
 # ---------------------------------------------------------------------------
 # _flag_extreme_outliers — MAD z-score threshold = 5.0
 # ---------------------------------------------------------------------------
+
 
 class TestFlagExtremeOutliers:
     def test_normal_expense_variation_not_flagged(self):
@@ -86,6 +95,7 @@ class TestFlagExtremeOutliers:
 # _remove_outliers — IQR multiplier = 3.0
 # ---------------------------------------------------------------------------
 
+
 class TestRemoveOutliers:
     def test_moderate_outlier_kept_at_3x_iqr(self):
         """A value at 2.5× IQR above Q3 should NOT be removed (old 1.5× would remove it).
@@ -107,8 +117,7 @@ class TestRemoveOutliers:
         # IQR = 25, upper = 42.5 + 75 = 117.5; 200 > 117.5 → should be dropped
         cleaned, audit, failed = _run_remove(df, "amount")
         assert 200.0 not in cleaned["amount"].values, (
-            "Value 200 (6× IQR above Q3) was not removed. "
-            "The IQR multiplier of 3.0 may be broken."
+            "Value 200 (6× IQR above Q3) was not removed. The IQR multiplier of 3.0 may be broken."
         )
 
     def test_all_normal_data_untouched(self):
@@ -122,6 +131,7 @@ class TestRemoveOutliers:
 # ---------------------------------------------------------------------------
 # profile_task outlier detection — 15× IQR fence
 # ---------------------------------------------------------------------------
+
 
 class TestProfileTaskOutlierFence:
     """Tests for the profile_task outlier fence (15× IQR, mean+8*std fallback).

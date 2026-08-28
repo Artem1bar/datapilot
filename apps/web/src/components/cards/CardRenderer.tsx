@@ -10,6 +10,8 @@ import { DataPreviewCard } from "./DataPreviewCard";
 import { DataDictionaryCard } from "./DataDictionaryCard";
 import { ComparisonCard } from "./ComparisonCard";
 import { HistoryCard } from "./HistoryCard";
+import { AnalysisMethodsCard } from "./AnalysisMethodsCard";
+import { AnalysisResultsCard } from "./AnalysisResultsCard";
 import { ErrorCard } from "./ErrorCard";
 
 interface CardRendererProps {
@@ -21,13 +23,23 @@ interface CardRendererProps {
 /**
  * Dispatches a CardPayload to the appropriate card component.
  */
-export function CardRenderer({ payload, messageId, onAction }: CardRendererProps) {
+export function CardRenderer({
+  payload,
+  messageId,
+  onAction,
+}: CardRendererProps) {
   switch (payload.type) {
     case "inspection_summary":
       return <InspectionSummaryCard payload={payload} />;
 
     case "cleaning_plan":
-      return <CleaningPlanCard payload={payload} messageId={messageId} onAction={onAction} />;
+      return (
+        <CleaningPlanCard
+          payload={payload}
+          messageId={messageId}
+          onAction={onAction}
+        />
+      );
 
     case "cleaning_progress":
       return <CleaningProgressCard payload={payload} />;
@@ -36,7 +48,13 @@ export function CardRenderer({ payload, messageId, onAction }: CardRendererProps
       return <ValidationSummaryCard payload={payload} />;
 
     case "cleaning_results":
-      return <CleaningResultsCard payload={payload} messageId={messageId} onAction={onAction} />;
+      return (
+        <CleaningResultsCard
+          payload={payload}
+          messageId={messageId}
+          onAction={onAction}
+        />
+      );
 
     case "manipulation_preview":
       return <ManipulationPreviewCard payload={payload} onAction={onAction} />;
@@ -55,6 +73,12 @@ export function CardRenderer({ payload, messageId, onAction }: CardRendererProps
 
     case "history":
       return <HistoryCard payload={payload} />;
+
+    case "analysis_results":
+      return <AnalysisResultsCard payload={payload} />;
+
+    case "analysis_methods":
+      return <AnalysisMethodsCard payload={payload} />;
 
     case "error":
       return <ErrorCard payload={payload} onAction={onAction} />;

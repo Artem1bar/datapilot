@@ -132,6 +132,7 @@ async def chat(
         profile_json=dataset.profile_json,
         df=df,
         history=history,
+        filename=dataset.filename,
     )
 
     # Append messages to the session
@@ -143,6 +144,7 @@ async def chat(
             "content": analysis_result["answer"],
             "charts": analysis_result.get("charts", []),
             "tables": analysis_result.get("tables", []),
+            "provenance": analysis_result.get("provenance"),
         }
     )
     session.messages_json = messages

@@ -48,7 +48,7 @@ def validate_file_content(file_bytes: bytes, filename: str) -> bool:
 
     # Check if file starts with any valid signature
     for sig in signatures:
-        if file_bytes[:len(sig)] == sig:
+        if file_bytes[: len(sig)] == sig:
             return True
 
     logger.warning(
