@@ -9,6 +9,90 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+### Code export: Python and R scripts that reproduce every answer (Phase 5)
+
+The pipeline's claim is that every reported number was computed from the uploaded
+file by deterministic code, not produced by a model. Code export makes that
+claim checkable: for any validated analysis spec it renders the equivalent
+Python (scipy/pandas/numpy) or R (dplyr/tidyr/base stats) — imports, a load
+line the reader edits, the filter, then one commented block per operation.
+
+An operation with no emitter is never silently dropped; it becomes a commented
+placeholder carrying the parameters it was given. An export that omits a step
+would read as a complete reproduction, and would not be one.
+
+Tests execute the generated Python against the same dataframe and compare it
+with the pipeline's own output, so faithfulness is a test condition, not an
+assertion.
+
+Two dialects (Python, R) cover operations in Tiers 1–4. Tier 5 (time series)
+and Tier 6 (weighted survey) register their emitters from companion dialect
+modules imported automatically when the façade is loaded.
+
+### Time series: trends, seasonality, stationarity, anomalies, and forecasts (Phase 6)
+
+Where tier 3 asks whether two groups differ, time series asks whether a series
+trends, repeats, remembers its own past, and whether one series precedes
+another. All operations start by converting the timestamp column to a regular
+daily/weekly/monthly/quarterly/annual index, reporting any gaps filled.
+
+- `trend_seasonality` — STL decomposition into trend, seasonal, and remainder
+  components; classifies whether the trend is up, down, or flat and whether
+  seasonality is strong or absent
+- `autocorrelation` — ACF and PACF at user-specified lags; reports which lags
+  are significant and what that implies for ARIMA order selection
+- `stationarity` — ADF, KPSS, and (optionally) Phillips-Perron tests; reports
+  the agreed verdict and the number of differences required to achieve it
+- `forecast` — ARIMA(p,d,q) or auto-selected via AIC; every forecast point
+  carries its prediction interval; point forecasts without intervals are not
+  shipped; the notes state that the interval assumes the fitted model is correct
+  and widens with horizon
+- `granger_causality` — predictive precedence test; every result carries a note
+  saying so, whatever the p-value, because the name has been misread since Granger
+  introduced it
+
+Interpolated periods are counted, named in the notes, and counted against the
+regular-spacing assumption, which the narrator is required to surface.
+
+### Regression analysis: OLS, GLM families, quantile regression (Phase 4)
+
+Statistical modelling where the question is "how much does X predict Y, and
+for whom?" rather than "do these groups differ?"
+
+- `ols` — ordinary least squares with heteroskedasticity-robust (HC3) standard
+  errors by default, plus the option of classic homoskedastic SEs for
+  comparison; reports coefficients, CIs, p-values (BH-adjusted), R², and F
+- `logistic` — binary logistic regression with odds ratios and marginal effects;
+  McFadden's R² alongside the standard pseudo-R²
+- `quantile` — estimates conditional quantiles (default: 0.25, 0.50, 0.75)
+  without any distributional assumption; useful where conditional means hide the
+  story for the tails
+- Every model reports the same coefficient table format so the frontend can
+  render them uniformly in the AnalysisCoefficientTable card
+
+statsmodels>=0.14.4 added for GLM families, robust standard errors, and
+quantile regression.
+
+### Survey and weighted analysis: estimates that account for sampling design (Phase 3)
+
+When a dataset is a survey or uses sampling weights, unweighted means and
+proportions are wrong in a measurable way. This tier applies the weights.
+
+- `weighted_mean` — mean, SE, and 95% CI under the specified weight column;
+  reports effective n (= (Σw)²/Σw² — lower than n when a few rows dominate)
+- `weighted_proportion` — Wilson interval applied to the weighted count
+- `subgroup_estimate` — one row per subgroup, with weighted mean and effective n
+  for each; supports both mean and proportion outcomes
+- `design_effect` — the ratio of the variance under the design to the variance
+  of a simple random sample of the same size; DEFF > 1 means the weights are
+  inflating uncertainty
+- `rao_scott_chi_square` — the design-corrected chi-square for a weighted
+  two-way table, with Cramér's V computed from the design-adjusted statistic
+
+Survey variance uses the linearisation (Taylor series) estimator: fast, no
+resampling required, exact for proportions under binomial and for means under
+large n.
+
 ### Inferential statistics, assumption checks, and provenance (Phase 2)
 
 Phase 1 made the numbers real. Phase 2 makes them defensible: analysis can now
