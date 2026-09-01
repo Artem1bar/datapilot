@@ -308,9 +308,7 @@ class TestEqualVarianceLabelsMatchTheGroupsTested:
         singleton = [1.0]
         wide = [1.0, 2.0, 3.0, 4.0, 50.0]  # sd = 21.272047
         narrow = [2.0, 2.0, 2.0, 2.0, 2.5]  # sd = 0.223607
-        check = check_equal_variance(
-            [singleton, wide, narrow], labels=["A(n=1)", "B", "C"]
-        )
+        check = check_equal_variance([singleton, wide, narrow], labels=["A(n=1)", "B", "C"])
         assert "B sd = 21.27" in check.detail
         assert "C sd = 0.2236" in check.detail
         assert "A(n=1) sd" not in check.detail

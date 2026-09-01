@@ -424,8 +424,10 @@ def _emit_r_ols(params: dict[str, Any], label: str, index: int) -> Lines:
         ")",
         "# AIC/BIC agree with statsmodels for a Gaussian likelihood; R counts the",
         "# residual variance as a parameter and so does statsmodels' OLS.",
-        "# There is no Jarque-Bera in base R: use tseries::jarque.bera.test(residuals).",
-        "# There is no VIF either: use car::vif(fit), which needs a named-column fit.",
+        "# Neither Jarque-Bera nor VIF is in base R. To reproduce those two:",
+        '#   install.packages(c("tseries", "car"))',
+        "#   tseries::jarque.bera.test(residuals(fit)); car::vif(fit)",
+        "# car::vif needs a fit whose columns are named, so refit with a data frame.",
         f"show_result({r_literal(label)}, result_{index}, stats_{index})",
     ]
 
@@ -845,7 +847,8 @@ def _emit_r_arima(params: dict[str, Any], label: str, index: int) -> Lines:
         '# defaults to "CSS-ML", which conditions the first observations away and gives',
         "# slightly different estimates. Even with ML the two optimisers stop in",
         "# different places, so expect agreement to a few decimal places rather than",
-        "# to the last digit. forecast::Arima() wraps this with a tidier interface.",
+        "# to the last digit. For a tidier interface over the same fit:",
+        '#   install.packages("forecast"); forecast::Arima(...)',
         f"fit_{index} <- arima(",
         f"  series_{index}, order = c({', '.join(str(v) for v in order)}),",
         f"  seasonal = list(order = c({', '.join(str(v) for v in seasonal[:3])}),"

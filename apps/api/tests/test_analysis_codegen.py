@@ -1279,11 +1279,16 @@ class TestHostileNames:
 
         # Every formula in the emitted script, and what may appear in one.
         generated = {"y_", "x_", "w_", "s_", "psu_", "g_", "row_", "col_", "dom_", "fpc_", "."}
+        # Emitters also build indexed helpers — lagged_3, design_1 — from the
+        # renamed columns. Those are generated too, so they are allowed by
+        # shape; an uploaded column name matches neither rule.
+        indexed = re.compile(r"[a-z][a-z0-9_]*_\d+")
         for line in script.splitlines():
             for fragment in re.findall(r"~\s*([A-Za-z0-9_. +]+)", line):
                 for token in re.split(r"[+\s]+", fragment.strip()):
                     if token:
-                        assert token in generated, f"{token!r} in a formula: {line!r}"
+                        allowed = token in generated or indexed.fullmatch(token)
+                        assert allowed, f"{token!r} in a formula: {line!r}"
 
     def test_r_names_every_package_it_calls(self):
         """A pkg::fn() the install line does not mention is a script that fails late."""

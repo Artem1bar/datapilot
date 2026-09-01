@@ -594,6 +594,22 @@ _DEFAULT_CHART_Y: dict[str, str] = {
     "proportion_test": "proportion",
     "chi_square": "observed",
     "normality_test": "mean",
+    # Tiers 4-6. Column 1 already happens to be the right series for each of
+    # these, so these entries change nothing today — they are here so that
+    # reordering a result table cannot silently change what a chart plots,
+    # which is the failure this map exists to prevent.
+    "ols": "coefficient",
+    "logit": "coefficient",
+    "count_model": "coefficient",
+    "quantile_regression": "coefficient",
+    "decompose": "observed",
+    "arima": "value",
+    "autocorrelation": "acf",
+    "granger_causality": "f_statistic",
+    "weighted_mean": "weighted_mean",
+    "weighted_total": "weighted_total",
+    "design_effect": "effective_sample_size",
+    "subpopulation_estimate": "weighted_mean",
 }
 
 

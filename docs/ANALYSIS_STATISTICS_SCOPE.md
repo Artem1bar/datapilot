@@ -2,8 +2,10 @@
 
 _Drafted 2026-08-26. **Phase 1 shipped 2026-08-26** — Tier 1 + Tier 2 and the
 plan → validate → execute → narrate architecture. **Phase 2 shipped 2026-08-27**
-— Tier 3, assumption checks, effect sizes, and provenance. Phases 3–4 remain
-proposed._
+— Tier 3, assumption checks, effect sizes, and provenance. **Phases 3 and 4
+shipped 2026-08-27** — Tier 4 regression, Tier 5 time series, Tier 6 survey
+estimation, code export in Python and R, a planner dataset briefing, and ten
+fixes from an independent audit of the Tier 1–3 code. Thirty-three operations._
 
 ## The problem
 
@@ -163,8 +165,8 @@ it rather than the request path. Tiers 1–3 stay synchronous.
 |---|---|---|---|
 | 1 | Spec→Validate→Execute→Narrate + Tier 1–2 | 2–3 weeks | **Shipped** |
 | 2 | Tier 3 + assumption checks + provenance | 1.5–2 weeks | **Shipped** |
-| 3 | Tier 4 + code export | 2–3 weeks | Proposed |
-| 4 | Tier 5 + Tier 6 + multiple-comparison tracking | 2–3 weeks | Proposed |
+| 3 | Tier 4 + code export | 2–3 weeks | **Shipped** |
+| 4 | Tier 5 + Tier 6 + multiple-comparison tracking | 2–3 weeks | **Shipped** |
 
 ### Phase 1 as built
 
@@ -253,6 +255,53 @@ the same table, as it must.
 Phase 3 is the next meaningful step: Tier 4 regression, and code export — the
 trust bridge that lets a researcher rerun the analysis in their own
 environment.
+
+### Phases 3 and 4 as built
+
+Thirty-three operations. The registry became self-declaring first: `Param`,
+`OperationDef` and `ColumnRoles` moved to `analysis_registry.py`, so a tier
+module declares its operations beside the code that runs them and
+`analysis_spec.py` merges them. Adding a tier is one new file rather than
+coordinated edits to the whitelist, the dispatch table and the prompt — which is
+also what let three tiers be written concurrently without collision.
+
+- **Tier 4** (`analysis_regression.py`) — `ols`, `logit`, `count_model`,
+  `quantile_regression`, with robust standard errors, VIF, Breusch-Pagan,
+  Durbin-Watson, Jarque-Bera and Cook's distance. Perfect separation refuses.
+- **Tier 5** (`analysis_timeseries.py`) — `decompose`, `stationarity_test`,
+  `autocorrelation`, `arima`, `granger_causality`, over a shared regular-grid
+  preparation step that reports the frequency it inferred, the duplicates it
+  collapsed and the gaps it interpolated. A forecast always carries its interval.
+- **Tier 6** (`analysis_survey.py`) — `weighted_mean`, `weighted_total`,
+  `weighted_crosstab` with the Rao-Scott correction, `design_effect`, and
+  `subpopulation_estimate` as genuine domain estimation. Taylor linearisation,
+  design-based degrees of freedom, strata and clusters honoured.
+- **Code export** (`analysis_codegen*.py`) — Python and R for all 33
+  operations, attached to each answer's provenance. Tests execute the generated
+  Python against the same frame and compare it with the pipeline's own output,
+  so fidelity is a test condition. A coverage test makes an un-exportable tier a
+  failure rather than a silent gap.
+- **Planner briefing** (`analysis_briefing.py`) — measured structure fed to the
+  planner: weight candidates, repeated respondent ids, group sizes, skewness,
+  date regularity. Aimed squarely at the "wrong test selection" risk below.
+
+**The audit mattered more than any single tier.** An independent pass over the
+shipped Tier 1-3 code reproduced ten defects the 875-test suite passed clean
+over — pre-rounded p-values serialising as `p = 0`, a group comparison that
+dropped singleton groups from its test while showing them in the table, a
+one-way ANOVA reported where Levene's test had already failed (and where Welch's
+reverses the conclusion), an `n` that survived the nulls pandas had dropped, and
+a methods note that misattributed parameters after a failed operation. Each is
+fixed with a regression test. The lesson worth keeping: the core statistics were
+sound — every formula the audit checked against scipy and statsmodels held — and
+the defects clustered in the plumbing around them, in rounding, denominators,
+indices and labels. That is where to look next time.
+
+Verified end to end against data with known answers: `ols` recovered the
+coefficients of a constructed linear model to four decimals against an
+independent fit, `decompose` recovered a known seasonal amplitude and trend
+slope, `weighted_mean` matched a hand-computed weighted average, and
+`design_effect` matched Kish's closed form exactly.
 
 ## Risks
 

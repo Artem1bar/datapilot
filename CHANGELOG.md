@@ -9,89 +9,138 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
-### Code export: Python and R scripts that reproduce every answer (Phase 5)
+### Regression: OLS, logistic, count models, quantile regression (Phase 3)
 
-The pipeline's claim is that every reported number was computed from the uploaded
-file by deterministic code, not produced by a model. Code export makes that
-claim checkable: for any validated analysis spec it renders the equivalent
-Python (scipy/pandas/numpy) or R (dplyr/tidyr/base stats) — imports, a load
-line the reader edits, the filter, then one commented block per operation.
+Statistical modelling for "how much does X predict Y, holding the rest
+constant?" rather than "do these two groups differ?".
 
-An operation with no emitter is never silently dropped; it becomes a commented
-placeholder carrying the parameters it was given. An export that omits a step
-would read as a complete reproduction, and would not be one.
+- `ols` — linear regression with heteroskedasticity-robust standard errors
+  (HC3 by default, HC0–HC2 and classical available). Coefficient table with
+  confidence intervals, R², adjusted R², F, RMSE and AIC/BIC, plus VIF,
+  Breusch–Pagan, Durbin–Watson, Jarque–Bera and Cook's-distance diagnostics
+- `logit` — logistic regression reporting odds ratios with confidence intervals
+  beside the log-odds coefficients, McFadden's pseudo-R², the likelihood-ratio
+  test and the base rate. Perfect separation is a refusal, not a coefficient
+  table full of enormous standard errors
+- `count_model` — Poisson or negative binomial, with an optional exposure
+  offset. Checks Poisson's equal-mean-and-variance assumption and names the
+  negative binomial when it fails; coefficients also reported as incidence rate
+  ratios
+- `quantile_regression` — a chosen quantile of the outcome rather than its mean
+  (`tau`, default the median): the model for "what moves the bottom decile", and
+  for outcomes whose mean one outlier owns
+
+Categorical regressors are dummy-coded against their alphabetically first level,
+and that reference level is named in the output — a coefficient table whose
+baseline is unnamed cannot be read.
+
+statsmodels added for robust standard errors, GLM families and quantile fits.
+
+### Code export: Python and R that reproduce every answer (Phase 3)
+
+The pipeline's claim is that every reported number was computed from the
+uploaded file by deterministic code, not produced by a model. Code export makes
+that claim checkable: for any validated spec it renders the equivalent Python
+(pandas/numpy/scipy/statsmodels) or R — imports, a load line the reader edits,
+the filter, then one commented block per operation. Both languages cover all 33
+operations, and a test asserts that coverage, so a new tier cannot be added
+without an export.
+
+R uses the package a researcher would expect for each job: `lm`/`glm`/
+`MASS::glm.nb`/`quantreg::rq` for regression, `stats::stl` and `tseries` for
+time series, and **`survey`** — `svydesign`, `svymean`, `svytotal`,
+`svychisq` — for the weighted tier.
 
 Tests execute the generated Python against the same dataframe and compare it
-with the pipeline's own output, so faithfulness is a test condition, not an
-assertion.
+with the pipeline's own output, so faithfulness is a test condition rather than
+a claim. Uploaded column names reach the emitted scripts as escaped literals
+and never as identifiers, which is what keeps a column called `it's a "test"`
+from producing a script that will not parse.
 
-Two dialects (Python, R) cover operations in Tiers 1–4. Tier 5 (time series)
-and Tier 6 (weighted survey) register their emitters from companion dialect
-modules imported automatically when the façade is loaded.
+The scripts are attached to each answer's provenance, alongside a list naming
+any operation the export could not express — an export that omits a step reads
+as a complete reproduction and is not one.
 
-### Time series: trends, seasonality, stationarity, anomalies, and forecasts (Phase 6)
+### Time series: trend, seasonality, stationarity, autocorrelation, forecasts (Phase 4)
 
 Where tier 3 asks whether two groups differ, time series asks whether a series
 trends, repeats, remembers its own past, and whether one series precedes
-another. All operations start by converting the timestamp column to a regular
-daily/weekly/monthly/quarterly/annual index, reporting any gaps filled.
+another. Every operation first puts the data on a regular grid and reports what
+that cost: the frequency it inferred and from what evidence, duplicate
+timestamps collapsed, gaps interpolated. A series too irregular to salvage is
+refused with `resample` named as the fix.
 
-- `trend_seasonality` — STL decomposition into trend, seasonal, and remainder
-  components; classifies whether the trend is up, down, or flat and whether
-  seasonality is strong or absent
-- `autocorrelation` — ACF and PACF at user-specified lags; reports which lags
-  are significant and what that implies for ARIMA order selection
-- `stationarity` — ADF, KPSS, and (optionally) Phillips-Perron tests; reports
-  the agreed verdict and the number of differences required to achieve it
-- `forecast` — ARIMA(p,d,q) or auto-selected via AIC; every forecast point
-  carries its prediction interval; point forecasts without intervals are not
-  shipped; the notes state that the interval assumes the fitted model is correct
-  and widens with horizon
-- `granger_causality` — predictive precedence test; every result carries a note
-  saying so, whatever the p-value, because the name has been misread since Granger
-  introduced it
+- `decompose` — STL, or a classical decomposition when the series is too short;
+  reports trend and seasonality strength on a 0–1 scale
+- `stationarity_test` — ADF and KPSS together, because their nulls are
+  opposites: running both distinguishes a unit root from a deterministic trend
+  and says whether to difference or to detrend
+- `autocorrelation` — ACF and PACF with Bartlett bands plus a Ljung–Box test,
+  capped at a quarter of the series length with the cap stated when it applies
+- `arima` — ARIMA and seasonal ARIMA; with `forecast_periods`, a forecast whose
+  every point carries its prediction interval. Point forecasts without intervals
+  are not shipped, and the notes state that the interval assumes the fitted
+  model is correct and widens with horizon
+- `granger_causality` — an F-test per lag with Benjamini–Hochberg adjusted
+  p-values. Every result carries a note saying this is predictive precedence and
+  not causation, whatever the p-value, because the name has been misread since
+  Granger introduced it
 
-Interpolated periods are counted, named in the notes, and counted against the
-regular-spacing assumption, which the narrator is required to surface.
+### Survey estimation: weighted analysis that accounts for sampling design (Phase 4)
 
-### Regression analysis: OLS, GLM families, quantile regression (Phase 4)
+When a dataset carries sampling weights, unweighted means and proportions are
+wrong in a measurable way, and no general-purpose AI data tool handles this.
 
-Statistical modelling where the question is "how much does X predict Y, and
-for whom?" rather than "do these groups differ?"
+- `weighted_mean` / `weighted_total` — the population figure with a design-based
+  standard error and confidence interval, and the unweighted figure beside it so
+  the effect of weighting is visible
+- `weighted_crosstab` — a weighted contingency table tested with a **Rao–Scott
+  corrected** chi-square. The ordinary test on weighted counts is inflated by
+  the weights and is one of the commonest errors in published survey analysis
+- `design_effect` — Kish's design effect, the design-based one, the effective
+  sample size and the spread of the weights: the operation that says 2,000
+  responses carry the weight of about 1,240
+- `subpopulation_estimate` — domain estimation rather than filter-then-analyze,
+  reporting both standard errors so the difference is visible. Filtering first
+  changes the variance estimate; this does not
 
-- `ols` — ordinary least squares with heteroskedasticity-robust (HC3) standard
-  errors by default, plus the option of classic homoskedastic SEs for
-  comparison; reports coefficients, CIs, p-values (BH-adjusted), R², and F
-- `logistic` — binary logistic regression with odds ratios and marginal effects;
-  McFadden's R² alongside the standard pseudo-R²
-- `quantile` — estimates conditional quantiles (default: 0.25, 0.50, 0.75)
-  without any distributional assumption; useful where conditional means hide the
-  story for the tails
-- Every model reports the same coefficient table format so the frontend can
-  render them uniformly in the AnalysisCoefficientTable card
+Strata, clusters and a finite population correction are honoured when given.
+Variance uses Taylor linearisation with the ultimate-cluster approximation, and
+degrees of freedom follow the design rather than defaulting to n − 1. Negative,
+zero or missing weights are refused with the offending count named, and an
+extreme weight distribution is flagged as an assumption.
 
-statsmodels>=0.14.4 added for GLM families, robust standard errors, and
-quantile regression.
+### Planner dataset briefing
 
-### Survey and weighted analysis: estimates that account for sampling design (Phase 3)
+The planner now receives a structural summary measured from the full dataset:
+survey weight candidates with the evidence for each, whether rows repeat per
+respondent (so observations are not independent), group level counts and the
+smallest group size, distribution shape, date regularity, Likert-shaped columns
+and missingness. This addresses the residual risk the scope document names —
+the model choosing an operation that is valid but statistically inappropriate.
 
-When a dataset is a survey or uses sampling weights, unweighted means and
-proportions are wrong in a measurable way. This tier applies the weights.
+### Statistical audit and fixes
 
-- `weighted_mean` — mean, SE, and 95% CI under the specified weight column;
-  reports effective n (= (Σw)²/Σw² — lower than n when a few rows dominate)
-- `weighted_proportion` — Wilson interval applied to the weighted count
-- `subgroup_estimate` — one row per subgroup, with weighted mean and effective n
-  for each; supports both mean and proportion outcomes
-- `design_effect` — the ratio of the variance under the design to the variance
-  of a simple random sample of the same size; DEFF > 1 means the weights are
-  inflating uncertainty
-- `rao_scott_chi_square` — the design-corrected chi-square for a weighted
-  two-way table, with Cramér's V computed from the design-adjusted statistic
+An independent audit of the shipped Tier 1–3 code reproduced ten defects that
+the test suite passed clean over. All are fixed, each with a regression test:
 
-Survey variance uses the linearisation (Taylor series) estimator: fast, no
-resampling required, exact for proportions under binomial and for means under
-large n.
+- p-values below 1e-6 in four Tier 1/2 operations were pre-rounded to `0.0`
+  before the significant-figure logic could see them, so a methods note could
+  read `p = 0`
+- `group_comparison` excluded groups of one from its test while still showing
+  them in the table, and named neither the exclusion nor the groups compared
+- one-way ANOVA was reported even when Levene's test failed; it now switches to
+  Welch's ANOVA, which can reverse the conclusion
+- group splitting keyed on `str(value)`, so a column holding both `1` and `"1"`
+  duplicated a group and counted its rows twice
+- `crosstab` and `pivot` reported `n` as the full row count after pandas had
+  dropped nulls
+- the methods note attributed the wrong parameters to every operation following
+  a failed one
+- pairwise correlation p-values escaped multiple-comparison adjustment
+- a one-sided test was reported beside a two-sided interval
+- the Kruskal–Wallis effect size was labelled epsilon-squared while computing
+  eta-squared-H
 
 ### Inferential statistics, assumption checks, and provenance (Phase 2)
 

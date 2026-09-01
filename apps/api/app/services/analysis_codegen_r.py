@@ -233,8 +233,9 @@ kurtosis <- function(v) {
 }""",
     "normality_p": """normality_p <- function(values) {
   # shapiro.test is defined for 3 <= n <= 5000. Past that the product switches
-  # to D'Agostino K-squared, which base R does not have: use
-  # moments::agostino.test() there rather than reading an out-of-range p-value.
+  # to D'Agostino K-squared, which base R does not have:
+  #   install.packages("moments"); moments::agostino.test(values)
+  # Use that there rather than reading an out-of-range p-value.
   values <- values[is.finite(values)]
   if (length(values) < 3 || sd(values) == 0) return(NA_real_)
   if (length(values) > 5000) return(NA_real_)
@@ -369,7 +370,9 @@ def preamble(*, source: str, ops: list[str]) -> Lines:
             lines.append(
                 f"# {', '.join(held_back)} is installed but deliberately not attached — it masks a"
             )
-            lines.append("# function this script calls — so it is used as pkg::fn() below.")
+            lines.append(
+                "# function this script calls — so it is called with its package prefix below."
+            )
         lines.append("")
     lines += [
         "# The product sorts group labels by Unicode code point (Python's sorted()).",
