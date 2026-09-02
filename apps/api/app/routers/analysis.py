@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import logging
+import re
 import uuid
 
 import pandas as pd
@@ -17,25 +17,47 @@ from app.models.dataset import Dataset
 from app.schemas import ChatMessageRequest, ChatSessionResponse
 from app.services.analysis import analyze_data
 from app.services.storage import download_file_bytes
-from app.utils.dataframe import to_sample_records
+from app.utils.dataframe import read_dataframe
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["analysis"])
 
+# Column names that suggest a date, used to opt columns into datetime parsing.
+_DATE_NAME_RE = re.compile(r"date|time|day|month|year|created|updated|_at$", re.IGNORECASE)
 
-def _read_sample_rows(file_bytes: bytes, filename: str, n: int = 20) -> list[dict]:
-    """Read the first *n* rows from a dataset file and return them as a list of dicts."""
-    lower = filename.lower()
-    if lower.endswith(".xlsx") or lower.endswith(".xls"):
-        df = pd.read_excel(io.BytesIO(file_bytes), nrows=n)
-    elif lower.endswith(".parquet"):
-        df = pd.read_parquet(io.BytesIO(file_bytes))
-        df = df.head(n)
-    else:
-        df = pd.read_csv(io.BytesIO(file_bytes), nrows=n)
 
-    return to_sample_records(df)
+def _load_analysis_frame(file_bytes: bytes, filename: str) -> pd.DataFrame:
+    """Read the FULL dataset for analysis, with date-like columns parsed.
+
+    Analysis executes over every row — reading a sample would put the pipeline
+    back where it started, reporting figures derived from 20 rows.
+
+    Object columns whose name suggests a date are parsed to datetime so the
+    ``resample`` operation is reachable. CSV has no dtype metadata, so a column
+    of ISO date strings arrives as ``object`` and would otherwise fail the
+    validator's datetime check. Parsing is best-effort: a column that does not
+    convert cleanly is left as text.
+    """
+    df = read_dataframe(file_bytes, filename)
+
+    for column in df.columns:
+        # Test by what the column is NOT: pandas 3 reports text columns as
+        # dtype "str" where pandas 2 reported "object", so matching on either
+        # name would silently skip every text column on one of the two.
+        if pd.api.types.is_datetime64_any_dtype(df[column]) or pd.api.types.is_numeric_dtype(
+            df[column]
+        ):
+            continue
+        if not _DATE_NAME_RE.search(str(column)):
+            continue
+        converted = pd.to_datetime(df[column], errors="coerce", format="mixed")
+        # Only accept the conversion when most values actually parsed; a stray
+        # date-like name over free text should stay text.
+        if converted.notna().mean() >= 0.8:
+            df[column] = converted
+
+    return df
 
 
 @router.post(
@@ -91,10 +113,10 @@ async def chat(
         )
         db.add(session)
 
-    # Download file and read sample rows — run sync IO in thread
+    # Download and load the full dataset — run sync IO in thread
     try:
         file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
-        sample_rows = _read_sample_rows(file_bytes, dataset.filename)
+        df = await asyncio.to_thread(_load_analysis_frame, file_bytes, dataset.filename)
     except Exception:
         logger.exception("Failed to download or read dataset file for dataset %s", dataset_id)
         raise HTTPException(
@@ -102,14 +124,15 @@ async def chat(
             detail="Failed to read dataset file.",
         )
 
-    # Call Claude in a thread so we don't block the event loop
+    # Plan, execute, and narrate in a thread so we don't block the event loop
     history = list(session.messages_json) if session.messages_json else []
     analysis_result = await asyncio.to_thread(
         analyze_data,
         question=body.message,
         profile_json=dataset.profile_json,
-        sample_rows=sample_rows,
+        df=df,
         history=history,
+        filename=dataset.filename,
     )
 
     # Append messages to the session
@@ -121,6 +144,7 @@ async def chat(
             "content": analysis_result["answer"],
             "charts": analysis_result.get("charts", []),
             "tables": analysis_result.get("tables", []),
+            "provenance": analysis_result.get("provenance"),
         }
     )
     session.messages_json = messages

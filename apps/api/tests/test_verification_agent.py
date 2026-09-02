@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, PropertyMock, patch
 
+from app.config import settings
 from app.services.verification_agent import (
     AgentVerificationResult,
     _result_from_tool_input,
@@ -149,7 +150,9 @@ class TestRunVerificationAgent:
         assert result.confidence == 0.95
         mock_client.messages.create.assert_called_once()
         call_kwargs = mock_client.messages.create.call_args.kwargs
-        assert call_kwargs["model"] == "claude-sonnet-4-6"
+        # Assert against config, not a literal — the model tier is env-driven,
+        # so pinning the string here just breaks on every model bump.
+        assert call_kwargs["model"] == settings.VERIFICATION_MODEL
         assert call_kwargs["max_tokens"] == 8192
         # The submit_verification tool is forced.
         assert call_kwargs["tool_choice"] == {"type": "tool", "name": "submit_verification"}

@@ -67,10 +67,14 @@ class TestSafeValue:
 
 class TestCompareDatasets:
     def _simple_before(self):
-        return pd.DataFrame({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"], "score": [80, 90, 70]})
+        return pd.DataFrame(
+            {"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"], "score": [80, 90, 70]}
+        )
 
     def _simple_after(self):
-        return pd.DataFrame({"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"], "score": [85, 90, 75]})
+        return pd.DataFrame(
+            {"id": [1, 2, 3], "name": ["Alice", "Bob", "Carol"], "score": [85, 90, 75]}
+        )
 
     def test_summary_row_counts(self):
         df_b = self._simple_before()

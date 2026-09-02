@@ -1,4 +1,5 @@
 """Pydantic schemas for spreadsheet manipulation."""
+
 from __future__ import annotations
 
 from enum import StrEnum

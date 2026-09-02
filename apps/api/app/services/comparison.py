@@ -1,4 +1,5 @@
 """Dataset comparison service — diff two datasets."""
+
 from __future__ import annotations
 
 import logging
@@ -50,7 +51,9 @@ def compare_datasets(
 
     # Statistical drift for common numeric columns
     for col in common_cols:
-        if pd.api.types.is_numeric_dtype(df_before[col]) and pd.api.types.is_numeric_dtype(df_after[col]):
+        if pd.api.types.is_numeric_dtype(df_before[col]) and pd.api.types.is_numeric_dtype(
+            df_after[col]
+        ):
             before_desc = df_before[col].describe()
             after_desc = df_after[col].describe()
 
@@ -63,17 +66,19 @@ def compare_datasets(
             pct_change = (mean_shift / before_mean * 100) if before_mean != 0 else 0
 
             if abs(pct_change) > 5:  # Only report meaningful drift
-                report["statistical_drift"].append({
-                    "column": col,
-                    "before_mean": round(before_mean, 4),
-                    "after_mean": round(after_mean, 4),
-                    "mean_shift": round(mean_shift, 4),
-                    "pct_change": round(pct_change, 2),
-                    "before_std": round(before_std, 4),
-                    "after_std": round(after_std, 4),
-                    "before_null_pct": round(float(df_before[col].isna().mean()) * 100, 2),
-                    "after_null_pct": round(float(df_after[col].isna().mean()) * 100, 2),
-                })
+                report["statistical_drift"].append(
+                    {
+                        "column": col,
+                        "before_mean": round(before_mean, 4),
+                        "after_mean": round(after_mean, 4),
+                        "mean_shift": round(mean_shift, 4),
+                        "pct_change": round(pct_change, 2),
+                        "before_std": round(before_std, 4),
+                        "after_std": round(after_std, 4),
+                        "before_null_pct": round(float(df_before[col].isna().mean()) * 100, 2),
+                        "after_null_pct": round(float(df_after[col].isna().mean()) * 100, 2),
+                    }
+                )
 
     # Cell-level changes (sample)
     min_rows = min(len(df_before), len(df_after), max_sample)
@@ -83,12 +88,14 @@ def compare_datasets(
             before_val = df_before.iloc[i].get(col)
             after_val = df_after.iloc[i].get(col) if col in df_after.columns else None
             if not _values_equal(before_val, after_val):
-                changes.append({
-                    "row": i,
-                    "column": col,
-                    "before": _safe_value(before_val),
-                    "after": _safe_value(after_val),
-                })
+                changes.append(
+                    {
+                        "row": i,
+                        "column": col,
+                        "before": _safe_value(before_val),
+                        "after": _safe_value(after_val),
+                    }
+                )
         if len(changes) >= 200:
             break
 
@@ -101,11 +108,13 @@ def compare_datasets(
         before_type = str(df_before[col].dtype)
         after_type = str(df_after[col].dtype)
         if before_type != after_type:
-            type_changes.append({
-                "column": col,
-                "before_type": before_type,
-                "after_type": after_type,
-            })
+            type_changes.append(
+                {
+                    "column": col,
+                    "before_type": before_type,
+                    "after_type": after_type,
+                }
+            )
     report["columns"]["type_changes"] = type_changes
 
     return report

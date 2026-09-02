@@ -1,4 +1,5 @@
 """Dataset operation history — tracks every mutation for undo/redo."""
+
 from __future__ import annotations
 
 import logging

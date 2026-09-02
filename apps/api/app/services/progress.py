@@ -38,13 +38,15 @@ async def publish_progress(
 ) -> None:
     """Publish a progress update for a job."""
     r = await get_redis()
-    payload = json.dumps({
-        "job_id": str(job_id),
-        "status": status,
-        "progress": progress,
-        "message": message,
-        "result": result,
-    })
+    payload = json.dumps(
+        {
+            "job_id": str(job_id),
+            "status": status,
+            "progress": progress,
+            "message": message,
+            "result": result,
+        }
+    )
     await r.publish(_channel_name(job_id), payload)
 
 

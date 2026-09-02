@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, Field
 # Enums
 # ---------------------------------------------------------------------------
 
+
 class JobStatus(StrEnum):
     pending = "pending"
     running = "running"
@@ -38,18 +39,25 @@ class ExportFormat(StrEnum):
 # Core domain schemas
 # ---------------------------------------------------------------------------
 
+
 class CleaningStep(BaseModel):
     """A single cleaning operation."""
+
     model_config = ConfigDict(from_attributes=True)
 
-    operation: str = Field(..., description="Cleaning operation name, e.g. drop_nulls, rename_column")
+    operation: str = Field(
+        ..., description="Cleaning operation name, e.g. drop_nulls, rename_column"
+    )
     column: str | None = Field(None, description="Target column name")
-    params: dict[str, Any] = Field(default_factory=dict, description="Operation-specific parameters")
+    params: dict[str, Any] = Field(
+        default_factory=dict, description="Operation-specific parameters"
+    )
     description: str = Field("", description="Human-readable description of this step")
 
 
 class CleaningPlan(BaseModel):
     """An ordered list of cleaning steps proposed for a dataset."""
+
     model_config = ConfigDict(from_attributes=True)
 
     dataset_id: uuid.UUID
@@ -60,17 +68,27 @@ class CleaningPlan(BaseModel):
 
 class AnalysisResult(BaseModel):
     """Result of an analysis chat turn."""
+
     model_config = ConfigDict(from_attributes=True)
 
     answer: str = Field(..., description="Natural-language answer")
     sql: str | None = Field(None, description="Generated SQL/pandas code, if any")
     charts: list[ChartConfig] = Field(default_factory=list)
     tables: list[TableResult] = Field(default_factory=list)
+    provenance: dict[str, Any] | None = Field(
+        None,
+        description=(
+            "What actually ran: operations, denominators, assumption checks, library "
+            "versions, and a rendered methods note. Null when the analysis was refused "
+            "or could not be computed."
+        ),
+    )
     tokens_used: int = Field(0)
 
 
 class ChartConfig(BaseModel):
     """Configuration for a chart to render on the frontend."""
+
     chart_type: str = Field(..., description="E.g. bar, line, scatter, pie")
     title: str = ""
     x_field: str = ""
@@ -81,6 +99,7 @@ class ChartConfig(BaseModel):
 
 class TableResult(BaseModel):
     """Tabular data returned from analysis."""
+
     columns: list[str]
     rows: list[list[Any]]
     total_rows: int = 0
@@ -88,6 +107,7 @@ class TableResult(BaseModel):
 
 class JobUpdate(BaseModel):
     """Real-time job progress update (sent over WebSocket / SSE)."""
+
     job_id: uuid.UUID
     status: JobStatus
     progress: int = Field(0, ge=0, le=100)
@@ -102,6 +122,7 @@ AnalysisResult.model_rebuild()
 # ---------------------------------------------------------------------------
 # Request schemas
 # ---------------------------------------------------------------------------
+
 
 class UploadUrlRequest(BaseModel):
     filename: str = Field(..., min_length=1, max_length=500)
@@ -128,6 +149,7 @@ class ExportRequest(BaseModel):
 # ---------------------------------------------------------------------------
 # Response schemas
 # ---------------------------------------------------------------------------
+
 
 class UploadUrlResponse(BaseModel):
     upload_url: str
@@ -178,8 +200,10 @@ class ChatSessionResponse(BaseModel):
 # Verification schemas
 # ---------------------------------------------------------------------------
 
+
 class VerificationStepResult(BaseModel):
     """Verification result for a single cleaning step."""
+
     step_index: int
     operation: str
     column: str | None = None
@@ -191,6 +215,7 @@ class VerificationStepResult(BaseModel):
 
 class VerificationResult(BaseModel):
     """Full verification report for a cleaning job."""
+
     overall_passed: bool
     flags_resolved: list[str] = Field(default_factory=list)
     flags_remaining: list[str] = Field(default_factory=list)

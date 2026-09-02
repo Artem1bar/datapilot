@@ -9,6 +9,300 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+### Regression: OLS, logistic, count models, quantile regression (Phase 3)
+
+Statistical modelling for "how much does X predict Y, holding the rest
+constant?" rather than "do these two groups differ?".
+
+- `ols` — linear regression with heteroskedasticity-robust standard errors
+  (HC3 by default, HC0–HC2 and classical available). Coefficient table with
+  confidence intervals, R², adjusted R², F, RMSE and AIC/BIC, plus VIF,
+  Breusch–Pagan, Durbin–Watson, Jarque–Bera and Cook's-distance diagnostics
+- `logit` — logistic regression reporting odds ratios with confidence intervals
+  beside the log-odds coefficients, McFadden's pseudo-R², the likelihood-ratio
+  test and the base rate. Perfect separation is a refusal, not a coefficient
+  table full of enormous standard errors
+- `count_model` — Poisson or negative binomial, with an optional exposure
+  offset. Checks Poisson's equal-mean-and-variance assumption and names the
+  negative binomial when it fails; coefficients also reported as incidence rate
+  ratios
+- `quantile_regression` — a chosen quantile of the outcome rather than its mean
+  (`tau`, default the median): the model for "what moves the bottom decile", and
+  for outcomes whose mean one outlier owns
+
+Categorical regressors are dummy-coded against their alphabetically first level,
+and that reference level is named in the output — a coefficient table whose
+baseline is unnamed cannot be read.
+
+statsmodels added for robust standard errors, GLM families and quantile fits.
+
+### Code export: Python and R that reproduce every answer (Phase 3)
+
+The pipeline's claim is that every reported number was computed from the
+uploaded file by deterministic code, not produced by a model. Code export makes
+that claim checkable: for any validated spec it renders the equivalent Python
+(pandas/numpy/scipy/statsmodels) or R — imports, a load line the reader edits,
+the filter, then one commented block per operation. Both languages cover all 33
+operations, and a test asserts that coverage, so a new tier cannot be added
+without an export.
+
+R uses the package a researcher would expect for each job: `lm`/`glm`/
+`MASS::glm.nb`/`quantreg::rq` for regression, `stats::stl` and `tseries` for
+time series, and **`survey`** — `svydesign`, `svymean`, `svytotal`,
+`svychisq` — for the weighted tier.
+
+Tests execute the generated Python against the same dataframe and compare it
+with the pipeline's own output, so faithfulness is a test condition rather than
+a claim. Uploaded column names reach the emitted scripts as escaped literals
+and never as identifiers, which is what keeps a column called `it's a "test"`
+from producing a script that will not parse.
+
+The scripts are attached to each answer's provenance, alongside a list naming
+any operation the export could not express — an export that omits a step reads
+as a complete reproduction and is not one.
+
+### Time series: trend, seasonality, stationarity, autocorrelation, forecasts (Phase 4)
+
+Where tier 3 asks whether two groups differ, time series asks whether a series
+trends, repeats, remembers its own past, and whether one series precedes
+another. Every operation first puts the data on a regular grid and reports what
+that cost: the frequency it inferred and from what evidence, duplicate
+timestamps collapsed, gaps interpolated. A series too irregular to salvage is
+refused with `resample` named as the fix.
+
+- `decompose` — STL, or a classical decomposition when the series is too short;
+  reports trend and seasonality strength on a 0–1 scale
+- `stationarity_test` — ADF and KPSS together, because their nulls are
+  opposites: running both distinguishes a unit root from a deterministic trend
+  and says whether to difference or to detrend
+- `autocorrelation` — ACF and PACF with Bartlett bands plus a Ljung–Box test,
+  capped at a quarter of the series length with the cap stated when it applies
+- `arima` — ARIMA and seasonal ARIMA; with `forecast_periods`, a forecast whose
+  every point carries its prediction interval. Point forecasts without intervals
+  are not shipped, and the notes state that the interval assumes the fitted
+  model is correct and widens with horizon
+- `granger_causality` — an F-test per lag with Benjamini–Hochberg adjusted
+  p-values. Every result carries a note saying this is predictive precedence and
+  not causation, whatever the p-value, because the name has been misread since
+  Granger introduced it
+
+### Survey estimation: weighted analysis that accounts for sampling design (Phase 4)
+
+When a dataset carries sampling weights, unweighted means and proportions are
+wrong in a measurable way, and no general-purpose AI data tool handles this.
+
+- `weighted_mean` / `weighted_total` — the population figure with a design-based
+  standard error and confidence interval, and the unweighted figure beside it so
+  the effect of weighting is visible
+- `weighted_crosstab` — a weighted contingency table tested with a **Rao–Scott
+  corrected** chi-square. The ordinary test on weighted counts is inflated by
+  the weights and is one of the commonest errors in published survey analysis
+- `design_effect` — Kish's design effect, the design-based one, the effective
+  sample size and the spread of the weights: the operation that says 2,000
+  responses carry the weight of about 1,240
+- `subpopulation_estimate` — domain estimation rather than filter-then-analyze,
+  reporting both standard errors so the difference is visible. Filtering first
+  changes the variance estimate; this does not
+
+Strata, clusters and a finite population correction are honoured when given.
+Variance uses Taylor linearisation with the ultimate-cluster approximation, and
+degrees of freedom follow the design rather than defaulting to n − 1. Negative,
+zero or missing weights are refused with the offending count named, and an
+extreme weight distribution is flagged as an assumption.
+
+### Planner dataset briefing
+
+The planner now receives a structural summary measured from the full dataset:
+survey weight candidates with the evidence for each, whether rows repeat per
+respondent (so observations are not independent), group level counts and the
+smallest group size, distribution shape, date regularity, Likert-shaped columns
+and missingness. This addresses the residual risk the scope document names —
+the model choosing an operation that is valid but statistically inappropriate.
+
+### Statistical audit and fixes
+
+An independent audit of the shipped Tier 1–3 code reproduced ten defects that
+the test suite passed clean over. All are fixed, each with a regression test:
+
+- p-values below 1e-6 in four Tier 1/2 operations were pre-rounded to `0.0`
+  before the significant-figure logic could see them, so a methods note could
+  read `p = 0`
+- `group_comparison` excluded groups of one from its test while still showing
+  them in the table, and named neither the exclusion nor the groups compared
+- one-way ANOVA was reported even when Levene's test failed; it now switches to
+  Welch's ANOVA, which can reverse the conclusion
+- group splitting keyed on `str(value)`, so a column holding both `1` and `"1"`
+  duplicated a group and counted its rows twice
+- `crosstab` and `pivot` reported `n` as the full row count after pandas had
+  dropped nulls
+- the methods note attributed the wrong parameters to every operation following
+  a failed one
+- pairwise correlation p-values escaped multiple-comparison adjustment
+- a one-sided test was reported beside a two-sided interval
+- the Kruskal–Wallis effect size was labelled epsilon-squared while computing
+  eta-squared-H
+
+### Inferential statistics, assumption checks, and provenance (Phase 2)
+
+Phase 1 made the numbers real. Phase 2 makes them defensible: analysis can now
+test whether a difference is distinguishable from chance, and every answer
+carries the record of how it was produced.
+
+Eight inferential operations join the eleven descriptive ones:
+
+- `ttest` — one-sample, independent (Welch by default), or paired
+- `anova` — one-way, with Tukey HSD pairwise comparisons
+- `kruskal`, `mannwhitney`, `wilcoxon` — rank-based equivalents that assume no
+  normality, for skewed, ordinal, or small-n data
+- `chi_square` — independence (Cramér's V, plus an exact Fisher result on 2x2
+  tables) or goodness of fit against an even split
+- `proportion_test` — one- and two-sample, with Wilson and Newcombe intervals
+- `normality_test` — the check behind choosing a t-test over a rank test
+
+**Every test reports four things beside its statistic**: an effect size with
+Cohen's conventional magnitude label, a confidence interval, explicit assumption
+checks, and n. A p-value alone invites the two commonest mistakes in applied
+statistics — reading significance as importance, and running a test whose
+assumptions the data violate.
+
+**Assumption checks are three-valued.** `true`, `false`, and `null` for "could
+not be evaluated", which is not the same as passing. The narrator prompt now
+requires a failed check to appear in the same breath as the finding it
+undermines, rather than as a closing caveat.
+
+**Operations refuse rather than degrade.** An independent t-test over three
+groups raises and names ANOVA instead of silently comparing the first two. The
+validator learned the actual values of low-cardinality columns, so a filter on
+`"Weest"` or a `success_value` of `"Yes"` where the data says `"yes"` is
+rejected with the real spellings — a rejection the model can act on, instead of
+an empty result it cannot explain.
+
+**Multiple comparisons.** P-values across the tests in one answer are adjusted by
+Benjamini-Hochberg, and the narrator treats the adjusted value as the one that
+decides significance.
+
+**Provenance.** Every computed answer now returns a record of what ran — the
+operations and their parameters, n and n_excluded per operation, every
+assumption check, and the exact pandas/numpy/scipy/Python versions — rendered as
+a markdown methods note. Nothing in that path calls a model: a methods note
+written by the thing whose trustworthiness it attests to would be worth nothing.
+It surfaces in the chat as a collapsible **Methods** card with a copy button.
+The field is additive (`provenance`, null on a refusal), so existing clients are
+unaffected.
+
+New modules, split so each stays readable: `analysis_stats.py` (effect sizes,
+intervals, assumption checks as pure array functions), `analysis_prep.py` (group
+splitting shared by every test), `analysis_inference.py` (mean and rank
+comparisons), `analysis_categorical.py` (counts and proportions),
+`analysis_provenance.py` (the record and its rendering), `analysis_result.py`
+(the shared result type). No new dependencies.
+
+Two defects found and fixed while verifying:
+
+- P-values below the rounding precision serialized as `0.0`. A methods note
+  reading `p = 0` claims certainty no test can support. Values below 1e-4 now
+  keep significant figures rather than decimal places.
+- Dropped incomplete pairs were reported as a *failed* assumption, which under
+  the narrator's rules would have had routine missingness described as
+  undermining the result. It is now "not evaluated", with the count and the
+  condition under which it would actually matter.
+
+Verified end-to-end against a 600-row dataset: t/F/z/chi-square statistics,
+degrees of freedom, Cohen's d, eta and omega squared, Cramér's V, Cohen's h,
+both CI bounds, and every group mean and proportion matched statistics computed
+independently from the raw arrays. `z²` equalled the uncorrected chi-square on
+the same table, as it must.
+
+Backend tests: 751 → 875 (89% coverage across the analysis modules). Frontend:
+128 → 139.
+
+### Analysis now computes instead of generating (Phase 1)
+
+Previously `analyze_data()` sent the profile and 20 sample rows to a model and
+asked it to produce the answer *and the chart values*, so every rendered figure
+was generated rather than measured. Analysis now follows the same trust model as
+cleaning: the model proposes a validated plan, deterministic code executes it,
+and the model explains the results it is given.
+
+- `app/services/analysis_spec.py` — operation whitelist and validator. A spec is
+  checked against the registry and the dataframe's real columns and dtypes before
+  anything runs; an unknown op, a hallucinated column, or a numeric aggregation
+  over a text column is rejected, not coerced. All problems are reported at once
+  so regeneration takes one round trip. A `refusal` is a valid terminal state.
+- `app/services/analysis_executor.py` — deterministic execution in pandas/scipy
+  over the **full** dataframe. Every result carries `n`, `n_excluded`, and notes,
+  so the narrator can say "excluding 38 rows with missing revenue" rather than
+  reporting a mean over an unstated denominator.
+- Eleven operations: `describe`, `groupby_aggregate`, `value_counts`, `crosstab`
+  (chi-square), `histogram`, `top_n`, `pivot`, `resample`, `correlation_matrix`
+  (pairwise p-values), `scatter_with_fit` (OLS slope/R²/p), `group_comparison`
+  (95% CIs plus Welch's t-test or one-way ANOVA).
+- Two prompts replace one: `analysis_plan.txt` (emit a spec, never a number) and
+  `analysis_narrate.txt` (explain computed results; introducing an unsupplied
+  figure is forbidden, as is claiming causation).
+- The planner's capability list is generated from the `OPERATIONS` registry, so
+  the prompt cannot drift from what the validator accepts.
+- The API response contract (`answer`, `charts`, `tables`) is unchanged — the
+  frontend needed no rewrite.
+- Adds `scipy>=1.14.0`.
+
+Verified end-to-end against a 480-row dataset with independently computed ground
+truth: regional totals, segment means, both CI bounds, sample sizes, and the
+t-statistic matched exactly, and an unanswerable question was refused rather
+than answered.
+
+### Fixed
+- `build_chart` plotted result column 1 unconditionally, so a `group_comparison`
+  chart titled "average revenue" rendered group *sizes* — its columns are
+  `[group, count, mean, ...]`. Charts now resolve the y column from the spec's
+  optional `y`, then a per-operation default, then column 1.
+- Non-finite statistics (a t-test over zero-variance groups returns NaN) are
+  emitted as `null`. NaN is not valid JSON, so the API had been able to produce
+  a response no JSON parser accepts.
+- `_load_analysis_frame` tested for dtype `"object"` to find text columns, which
+  matches nothing on pandas 3 (it reports `"str"`). Date parsing silently never
+  ran. It now tests for what a column is *not* — neither datetime nor numeric.
+
+### Tests
+- `test_analysis_spec.py`, `test_analysis_executor.py` — validator gate and
+  execution correctness, asserted against hand-computed values rather than
+  "a number came back".
+- `test_analysis.py` rewritten for the new architecture.
+- Backend total: 678 → 751 tests.
+
+### Changed
+- Model tiers moved to the Claude 5 family. Cleaning, verification, and manipulation
+  all run on `claude-opus-5` (they mutate user data, so they get the strongest model);
+  analysis runs on `claude-sonnet-5` for chat latency — set `ANALYSIS_MODEL=claude-opus-5`
+  to trade latency for depth. `DICTIONARY_MODEL` stays on Haiku 4.5.
+- `test_verification_agent.py` asserts the model against `settings.VERIFICATION_MODEL`
+  instead of a hardcoded id, so model bumps no longer break the test.
+
+### Added
+- `LLM_BACKEND` setting selecting how model calls are dispatched. `"api"` (default)
+  uses the Anthropic SDK billed to `ANTHROPIC_API_KEY`; `"cli"` subprocesses the local
+  `claude` binary so usage bills the operator's Claude subscription.
+- `app/services/llm_cli.py` — the CLI backend. Strips the coding-agent harness
+  (`--system-prompt`, `--setting-sources ""`, `--strict-mcp-config`, `--tools ""`),
+  which measured ~50k → ~600 tokens of preamble on a one-word reply; removes
+  `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN` from the child environment so a stray
+  key cannot silently redirect billing to the API; sends prompts over stdin.
+- `structured_output.complete_text()` — text-completion twin of `request_tool_call()`,
+  so both backends sit behind one helper and services never branch on the backend.
+- Production refuses to boot with `LLM_BACKEND != "api"` (`production_secret_problems`):
+  the CLI backend drives one person's subscription and cannot serve real users.
+- `test_llm_cli_backend.py` — 27 tests covering argv construction, env stripping,
+  failure modes, message flattening, JSON extraction, and backend dispatch.
+  Backend total: 651 → 678 tests.
+- `docs/ANALYSIS_STATISTICS_SCOPE.md` — scope for replacing the LLM-generated
+  analysis path with plan → validate → execute → narrate over real computation.
+
+### Known limitation
+- Under `LLM_BACKEND="cli"` there is no forced tool use, so structured output is
+  parsed out of the reply with a retry instead of guaranteed by the API. This is
+  strictly weaker than the API path and is one reason the CLI backend is for
+  closed testing only.
+
 ## [0.5.2] — 2026-08-18
 
 ### Fixed

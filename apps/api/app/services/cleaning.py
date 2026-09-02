@@ -653,7 +653,9 @@ def _drop_incomplete_responses(
     return df
 
 
-def _cap_extreme_values(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _cap_extreme_values(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Cap extreme values at a specified maximum, replacing with NaN.
 
     More direct than flag_extreme_outliers — specifically targets values above
@@ -695,7 +697,9 @@ def _cap_extreme_values(df: pd.DataFrame, column: str, params: dict[str, Any], a
     return df
 
 
-def _drop_rows(df: pd.DataFrame, column: str | None, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _drop_rows(
+    df: pd.DataFrame, column: str | None, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Drop specific rows by integer index (e.g. Qualtrics metadata header rows)."""
     indices = params.get("indices", [])
     if not indices:
@@ -718,7 +722,9 @@ def _drop_rows(df: pd.DataFrame, column: str | None, params: dict[str, Any], aud
     return df
 
 
-def _strip_whitespace(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _strip_whitespace(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     if column in df.columns and (
         df[column].dtype == object or pd.api.types.is_string_dtype(df[column])
     ):
@@ -760,7 +766,9 @@ def _remove_currency_symbols(
     return df
 
 
-def _extract_number(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _extract_number(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Extract the first numeric value from mixed text/number strings."""
     if column not in df.columns:
         return df
@@ -793,7 +801,9 @@ def _extract_number(df: pd.DataFrame, column: str, params: dict[str, Any], audit
     return df
 
 
-def _convert_number_words(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _convert_number_words(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Convert written number words ('five', 'twenty') to digits."""
     if column not in df.columns:
         return df
@@ -870,7 +880,9 @@ def _convert_time_to_number(
     return df
 
 
-def _free_to_zero(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _free_to_zero(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Convert 'Free' (case-insensitive) to numeric 0."""
     if column not in df.columns:
         return df
@@ -899,7 +911,9 @@ _VAGUE_PATTERNS = re.compile(
 )
 
 
-def _remove_vague_entries(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _remove_vague_entries(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     """Null out vague, unquantifiable entries."""
     if column not in df.columns:
         return df
@@ -1092,7 +1106,9 @@ def _flag_contextual_fraud(
     return df
 
 
-def _fill_null(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _fill_null(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     if column not in df.columns:
         return df
 
@@ -1129,7 +1145,9 @@ def _fill_null(df: pd.DataFrame, column: str, params: dict[str, Any], audit: lis
     return df
 
 
-def _drop_null(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _drop_null(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     if column in df.columns:
         dropped_indices = df.index[df[column].isna()].tolist()
         df = df.dropna(subset=[column]).reset_index(drop=True)
@@ -1147,7 +1165,9 @@ def _drop_null(df: pd.DataFrame, column: str, params: dict[str, Any], audit: lis
     return df
 
 
-def _cast_type(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _cast_type(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     if column not in df.columns:
         return df
 
@@ -1176,7 +1196,9 @@ def _cast_type(df: pd.DataFrame, column: str, params: dict[str, Any], audit: lis
     return df
 
 
-def _deduplicate(df: pd.DataFrame, column: str | None, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _deduplicate(
+    df: pd.DataFrame, column: str | None, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     subset = params.get("subset")
     if subset:
         dropped_indices = df.index[df.duplicated(subset=subset, keep="first")].tolist()
@@ -1198,14 +1220,18 @@ def _deduplicate(df: pd.DataFrame, column: str | None, params: dict[str, Any], a
     return df
 
 
-def _rename_column(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _rename_column(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     new_name = params.get("new_name")
     if column in df.columns and new_name:
         df = df.rename(columns={column: new_name})
     return df
 
 
-def _standardize_values(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _standardize_values(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     mapping = params.get("mapping", {})
     if column in df.columns and mapping:
         before = df[column].copy()
@@ -1219,7 +1245,9 @@ def _standardize_values(df: pd.DataFrame, column: str, params: dict[str, Any], a
     return df
 
 
-def _remove_outliers(df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]) -> pd.DataFrame:
+def _remove_outliers(
+    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+) -> pd.DataFrame:
     if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]):
         return df
 

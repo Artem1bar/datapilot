@@ -12,9 +12,7 @@ from app.models.user import User
 async def seed():
     async with async_session() as session:
         # Check if test user already exists
-        result = await session.execute(
-            select(User).where(User.clerk_id == "user_test_dev")
-        )
+        result = await session.execute(select(User).where(User.clerk_id == "user_test_dev"))
         existing = result.scalar_one_or_none()
 
         if existing:
