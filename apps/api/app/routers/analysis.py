@@ -14,8 +14,14 @@ from sqlalchemy import select
 from app.deps import CurrentUser, DBSession
 from app.models.chat_session import ChatSession
 from app.models.dataset import Dataset
-from app.schemas import ChatMessageRequest, ChatSessionResponse
+from app.schemas import (
+    AnalysisResult,
+    ChatMessageRequest,
+    ChatSessionResponse,
+    ScatterPlotRequest,
+)
 from app.services.analysis import analyze_data
+from app.services.analysis_plot import ScatterPlotError, scatter_plot
 from app.services.storage import download_file_bytes
 from app.utils.dataframe import read_dataframe
 
@@ -60,6 +66,36 @@ def _load_analysis_frame(file_bytes: bytes, filename: str) -> pd.DataFrame:
     return df
 
 
+async def _owned_dataset(db: DBSession, dataset_id: uuid.UUID, user_id: uuid.UUID) -> Dataset:
+    """The caller's dataset, profiled and ready to analyze."""
+    result = await db.execute(
+        select(Dataset).where(Dataset.id == dataset_id, Dataset.user_id == user_id)
+    )
+    dataset = result.scalar_one_or_none()
+    if dataset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
+
+    if not dataset.profile_json:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Dataset has not been profiled yet. Please wait for profiling to complete.",
+        )
+    return dataset
+
+
+async def _analysis_frame(dataset: Dataset) -> pd.DataFrame:
+    """Download and load the full dataset, running the sync IO in a thread."""
+    try:
+        file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
+        return await asyncio.to_thread(_load_analysis_frame, file_bytes, dataset.filename)
+    except Exception:
+        logger.exception("Failed to download or read dataset file for dataset %s", dataset.id)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to read dataset file.",
+        )
+
+
 @router.post(
     "/{dataset_id}/chat", response_model=ChatSessionResponse, status_code=status.HTTP_200_OK
 )
@@ -75,18 +111,7 @@ async def chat(
     await enforce_ai_budget(str(user.id))
     await check_rate_limit(str(user.id), action="analysis_chat", max_calls=30, window_seconds=3600)
 
-    result = await db.execute(
-        select(Dataset).where(Dataset.id == dataset_id, Dataset.user_id == user.id)
-    )
-    dataset = result.scalar_one_or_none()
-    if dataset is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Dataset not found")
-
-    if not dataset.profile_json:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Dataset has not been profiled yet. Please wait for profiling to complete.",
-        )
+    dataset = await _owned_dataset(db, dataset_id, user.id)
 
     # Load or create chat session
     session: ChatSession | None = None
@@ -113,16 +138,7 @@ async def chat(
         )
         db.add(session)
 
-    # Download and load the full dataset — run sync IO in thread
-    try:
-        file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
-        df = await asyncio.to_thread(_load_analysis_frame, file_bytes, dataset.filename)
-    except Exception:
-        logger.exception("Failed to download or read dataset file for dataset %s", dataset_id)
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Failed to read dataset file.",
-        )
+    df = await _analysis_frame(dataset)
 
     # Plan, execute, and narrate in a thread so we don't block the event loop
     history = list(session.messages_json) if session.messages_json else []
@@ -153,6 +169,51 @@ async def chat(
     await db.refresh(session)
 
     return ChatSessionResponse.model_validate(session)
+
+
+@router.post("/{dataset_id}/scatter", response_model=AnalysisResult, status_code=status.HTTP_200_OK)
+async def scatter(
+    dataset_id: uuid.UUID,
+    body: ScatterPlotRequest,
+    user: CurrentUser,
+    db: DBSession,
+) -> AnalysisResult:
+    """Plot one numeric column against another, with an OLS line fitted on every row.
+
+    No model is involved: the request already says what to compute, so the spec
+    is built directly and takes the same validation, execution and provenance
+    path as a chat answer. Rate limited on its own counter, and not charged to
+    the AI budget because nothing here calls one.
+    """
+    from app.services.rate_limit import check_rate_limit
+
+    await check_rate_limit(str(user.id), action="analysis_plot", max_calls=120, window_seconds=3600)
+
+    dataset = await _owned_dataset(db, dataset_id, user.id)
+    df = await _analysis_frame(dataset)
+
+    try:
+        plotted = await asyncio.to_thread(
+            scatter_plot,
+            df,
+            x=body.x,
+            y=body.y,
+            color_by=body.color_by,
+            size=body.size,
+            filename=dataset.filename,
+        )
+    except ScatterPlotError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"message": "The scatter plot could not be drawn.", "issues": exc.problems},
+        )
+
+    return AnalysisResult(
+        answer=plotted["answer"],
+        charts=plotted["charts"],
+        tables=plotted["tables"],
+        provenance=plotted["provenance"],
+    )
 
 
 @router.get(

@@ -69,6 +69,7 @@ export default function Chat() {
   const renameSession = useSessionStore((s) => s.renameSession);
 
   const addCharts = useAppStore((s) => s.addCharts);
+  const openScatterDialog = useAppStore((s) => s.openScatterDialog);
   const setChartPanelOpen = useAppStore((s) => s.setChartPanelOpen);
   const clearCharts = useAppStore((s) => s.clearCharts);
 
@@ -815,6 +816,11 @@ export default function Chat() {
         a.click();
         document.body.removeChild(a);
       }
+      if (action === "ask" && typeof data === "string") {
+        // A follow-up suggested by a chart's reading: put it in the box, let
+        // the user send it (or edit it) themselves.
+        setInput(data);
+      }
       if (action === "analyze" && typeof data === "string") {
         const sessionId = ownerSessionId ?? activeSessionId;
         if (sessionId) {
@@ -1154,6 +1160,7 @@ export default function Chat() {
         onTablePaste={handleTablePaste}
         onChipClick={handleChipClick}
         onApplyRecipe={(recipeId) => void applyRecipe(recipeId)}
+        onScatterPlot={openScatterDialog}
         hasDataset={hasDataset}
         sending={sending}
         showChips={messages.length === 0}

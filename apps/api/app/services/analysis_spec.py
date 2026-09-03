@@ -58,7 +58,12 @@ FILTER_OPERATORS = frozenset(
     {"==", "!=", ">", ">=", "<", "<=", "contains", "not_contains", "is_null", "is_not_null"}
 )
 
-CHART_TYPES = frozenset({"bar", "line", "scatter", "pie", "histogram"})
+CHART_TYPES = frozenset({"bar", "line", "scatter", "bubble", "pie", "histogram"})
+
+# How many colors a scatter legend can hold. Past this a color-by column is an
+# identifier rather than a grouping, and the chart is unreadable rather than
+# wrong — so it is refused, not drawn.
+MAX_SCATTER_GROUPS = 12
 
 # Time-series resample frequencies, restricted to an unambiguous set rather than
 # accepting arbitrary pandas offset aliases from a model.
@@ -119,6 +124,30 @@ def _check_proportion_test(params: dict[str, Any], roles: ColumnRoles) -> list[s
             f"(values: {sorted(known)[:20]})"
         )
     return problems
+
+
+def _check_scatter(params: dict[str, Any], roles: ColumnRoles) -> list[str]:
+    x, y = params.get("x"), params.get("y")
+    size, color_by = params.get("size"), params.get("color_by")
+    if x == y:
+        return [f"x and y are the same column {x!r}; a scatter needs two"]
+    if isinstance(size, str) and size in (x, y):
+        return [f"size: {size!r} is already an axis; choose a different column"]
+    if not isinstance(color_by, str):
+        return []
+    if color_by in (x, y):
+        return [f"color_by: {color_by!r} is already an axis; choose a different column"]
+    if color_by == size:
+        return [f"color_by: {color_by!r} is also the size column; choose a different column"]
+    if color_by in roles.datetime:
+        return [f"color_by: {color_by!r} is a date/time column; choose a categorical column"]
+    known = roles.categories.get(color_by)
+    if known is not None and len(known) > MAX_SCATTER_GROUPS:
+        return [
+            f"color_by: {color_by!r} has {len(known)} distinct values; "
+            f"at most {MAX_SCATTER_GROUPS} can be colored"
+        ]
+    return []
 
 
 OPERATIONS: dict[str, OperationDef] = {
@@ -198,8 +227,20 @@ OPERATIONS: dict[str, OperationDef] = {
     ),
     "scatter_with_fit": OperationDef(
         2,
-        "Two numeric columns with an OLS line: slope, R-squared, p-value.",
-        (Param("x", "numeric", required=True), Param("y", "numeric", required=True)),
+        "Two numeric columns with an OLS line: slope, R-squared, p-value. "
+        "A numeric size makes it a bubble chart.",
+        (
+            Param("x", "numeric", required=True),
+            Param("y", "numeric", required=True),
+            Param("size", "numeric"),
+            Param("color_by", "column"),
+        ),
+        requires=(
+            "size, when given, is a numeric column other than x and y; color_by, when "
+            f"given, is a categorical column with at most {MAX_SCATTER_GROUPS} distinct "
+            "values (a missing label does not count), and is neither x, y nor size"
+        ),
+        check=_check_scatter,
     ),
     "group_comparison": OperationDef(
         2,

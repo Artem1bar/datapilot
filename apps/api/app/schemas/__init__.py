@@ -140,6 +140,25 @@ class ChatMessageRequest(BaseModel):
     session_id: uuid.UUID | None = None
 
 
+class ScatterPlotRequest(BaseModel):
+    """A scatter plot of one numeric column against another."""
+
+    x: str = Field(..., min_length=1, max_length=500, description="Numeric column on the x axis")
+    y: str = Field(..., min_length=1, max_length=500, description="Numeric column on the y axis")
+    color_by: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Optional categorical column that colors the points",
+    )
+    size: str | None = Field(
+        None,
+        min_length=1,
+        max_length=500,
+        description="Optional numeric column that sizes the points (a bubble chart)",
+    )
+
+
 class ExportRequest(BaseModel):
     format: ExportFormat = ExportFormat.csv
     columns: list[str] | None = Field(None, description="Subset of columns to export; None = all")

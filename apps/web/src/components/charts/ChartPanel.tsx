@@ -1,7 +1,8 @@
 import { lazy, Suspense } from "react";
-import { X, BarChart3, TrendingUp, Trash2 } from "lucide-react";
+import { X, BarChart3, TrendingUp, Trash2, ScatterChart } from "lucide-react";
 import { motion } from "framer-motion";
 import { useAppStore } from "@/stores/app-store";
+import { useSessionStore } from "@/stores/session-store";
 import { Button } from "@/components/ui/button";
 
 // recharts is heavy (~800 kB unminified); load ChartRenderer only when a chart
@@ -17,6 +18,10 @@ export function ChartPanel() {
   const charts = useAppStore((s) => s.charts);
   const setChartPanelOpen = useAppStore((s) => s.setChartPanelOpen);
   const clearCharts = useAppStore((s) => s.clearCharts);
+  const openScatterDialog = useAppStore((s) => s.openScatterDialog);
+  const hasDataset = useSessionStore(
+    (s) => !!s.sessions.find((session) => session.id === s.activeSessionId)?.datasetId,
+  );
 
   return (
     <motion.div
@@ -44,6 +49,17 @@ export function ChartPanel() {
           </div>
 
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={openScatterDialog}
+              disabled={!hasDataset}
+              className="h-7 w-7 text-white/70 hover:bg-white/10 hover:text-white disabled:opacity-40"
+              aria-label="New scatter plot"
+              title={hasDataset ? "New scatter plot" : "Attach a dataset to plot"}
+            >
+              <ScatterChart className="h-3.5 w-3.5" />
+            </Button>
             {charts.length > 0 && (
               <Button
                 variant="ghost"
@@ -74,8 +90,23 @@ export function ChartPanel() {
                 <TrendingUp className="h-7 w-7 text-brand-300" />
               </div>
               <p className="text-[13px] leading-relaxed text-ink-muted">
-                Analyze your data and charts will appear here automatically.
+                Analyze your data and charts will appear here automatically, or
+                plot two columns directly.
               </p>
+              <Button
+                size="sm"
+                onClick={openScatterDialog}
+                disabled={!hasDataset}
+                className="gap-1.5 bg-brand-600 text-white hover:bg-brand-700"
+              >
+                <ScatterChart className="h-3.5 w-3.5" />
+                Plot a scatter
+              </Button>
+              {!hasDataset && (
+                <p className="text-[11px] text-ink-tertiary">
+                  Attach a dataset to plot its columns.
+                </p>
+              )}
             </div>
           ) : (
             <Suspense

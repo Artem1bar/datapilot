@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
-from fastapi import FastAPI
+import pandas as pd
+import pytest
+from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from app.deps import get_current_user, get_db
@@ -179,3 +181,130 @@ class TestGetSession:
         body = response.json()
         assert "created_at" in body
         assert "updated_at" in body
+
+
+# ---------------------------------------------------------------------------
+# POST /{dataset_id}/scatter — a plot on demand, without the planner
+# ---------------------------------------------------------------------------
+
+
+def _make_dataset(profile: dict | None = None) -> MagicMock:
+    dataset = MagicMock()
+    dataset.id = DATASET_ID
+    dataset.user_id = USER_ID
+    dataset.filename = "sales.csv"
+    dataset.r2_key = "uploads/sales.csv"
+    dataset.profile_json = {"columns": {}} if profile is None else profile
+    return dataset
+
+
+def _points_frame() -> pd.DataFrame:
+    return pd.DataFrame(
+        {
+            "units": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "revenue": [10.0, 21.0, 29.0, 41.0, 52.0, 58.0],
+            "region": ["West", "East", "West", "East", "West", "East"],
+        }
+    )
+
+
+class TestScatterPlot:
+    def _client_with_frame(self, dataset: MagicMock | None = None) -> TestClient:
+        db = _make_db_scalar_one_or_none(dataset if dataset is not None else _make_dataset())
+        return _authed_client(db=db)
+
+    def test_unknown_dataset_returns_404(self):
+        client = _authed_client(db=_make_db_scalar_one_or_none(None))
+        with patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock):
+            response = client.post(
+                f"/analysis/{DATASET_ID}/scatter", json={"x": "units", "y": "revenue"}
+            )
+        assert response.status_code == 404
+
+    def test_unprofiled_dataset_returns_400(self):
+        dataset = _make_dataset()
+        dataset.profile_json = None
+        client = self._client_with_frame(dataset)
+        with patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock):
+            response = client.post(
+                f"/analysis/{DATASET_ID}/scatter", json={"x": "units", "y": "revenue"}
+            )
+        assert response.status_code == 400
+
+    def test_missing_axis_returns_422(self):
+        client = self._client_with_frame()
+        with patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock):
+            response = client.post(f"/analysis/{DATASET_ID}/scatter", json={"x": "units"})
+        assert response.status_code == 422
+
+    def test_unknown_column_returns_422_naming_the_problem(self):
+        client = self._client_with_frame()
+        with (
+            patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock),
+            patch("app.routers.analysis.download_file_bytes", return_value=b""),
+            patch("app.routers.analysis._load_analysis_frame", return_value=_points_frame()),
+        ):
+            response = client.post(
+                f"/analysis/{DATASET_ID}/scatter", json={"x": "nope", "y": "revenue"}
+            )
+        assert response.status_code == 422
+        detail = response.json()["detail"]
+        assert "issues" in detail
+        assert any("nope" in issue for issue in detail["issues"])
+
+    def test_returns_the_computed_plot(self):
+        client = self._client_with_frame()
+        with (
+            patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock),
+            patch("app.services.rate_limit.enforce_ai_budget", new_callable=AsyncMock) as budget,
+            patch("app.routers.analysis.download_file_bytes", return_value=b""),
+            patch("app.routers.analysis._load_analysis_frame", return_value=_points_frame()),
+        ):
+            response = client.post(
+                f"/analysis/{DATASET_ID}/scatter",
+                json={"x": "units", "y": "revenue", "color_by": "region"},
+            )
+        assert response.status_code == 200
+        body = response.json()
+        chart = body["charts"][0]
+        assert chart["chart_type"] == "scatter"
+        assert len(chart["data"]) == 6
+        assert chart["data"][0]["group"] == "West"
+        assert chart["options"]["fit"]["slope"] == pytest.approx(9.8, abs=0.5)
+        assert body["provenance"]["operations"][0]["op"] == "scatter_with_fit"
+        assert "python" in body["provenance"]["code"]
+        assert body["answer"]
+        assert body["tokens_used"] == 0
+        # No model runs for a plot, so the AI budget must not be charged.
+        budget.assert_not_awaited()
+
+    def test_a_size_column_returns_a_bubble_chart(self):
+        client = self._client_with_frame()
+        frame = _points_frame().assign(orders=[3.0, 1.0, 4.0, 1.0, 5.0, 9.0])
+        with (
+            patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock),
+            patch("app.routers.analysis.download_file_bytes", return_value=b""),
+            patch("app.routers.analysis._load_analysis_frame", return_value=frame),
+        ):
+            response = client.post(
+                f"/analysis/{DATASET_ID}/scatter",
+                json={"x": "units", "y": "revenue", "size": "orders"},
+            )
+        assert response.status_code == 200
+        chart = response.json()["charts"][0]
+        assert chart["chart_type"] == "bubble"
+        assert chart["data"][0]["size"] == 3.0
+        assert chart["options"]["interpretation"]["direction"] == "positive"
+
+    def test_is_rate_limited_before_touching_the_dataset(self):
+        client = self._client_with_frame()
+        with (
+            patch("app.services.rate_limit.check_rate_limit", new_callable=AsyncMock) as limit,
+            patch("app.routers.analysis.download_file_bytes") as download,
+        ):
+            limit.side_effect = HTTPException(status_code=429, detail="rate limited")
+            response = client.post(
+                f"/analysis/{DATASET_ID}/scatter", json={"x": "units", "y": "revenue"}
+            )
+        assert response.status_code == 429
+        download.assert_not_called()

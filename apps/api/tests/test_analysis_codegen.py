@@ -431,6 +431,18 @@ CASES: tuple[Case, ...] = (
         r_contains=("lm(",),
     ),
     Case(
+        "scatter_with_fit_bubble",
+        one("scatter_with_fit", {"x": "cost", "y": "revenue", "size": "before"}),
+        stats_map=(("slope", "slope"), ("r_squared", "r_squared")),
+        r_contains=("lm(",),
+    ),
+    Case(
+        "scatter_with_fit_coloured",
+        one("scatter_with_fit", {"x": "cost", "y": "revenue", "color_by": "region"}),
+        stats_map=(("slope", "slope"), ("r_squared", "r_squared"), ("p_value", "p_value")),
+        r_contains=("lm(",),
+    ),
+    Case(
         "group_comparison",
         one("group_comparison", {"group_by": "segment", "column": "revenue"}),
         stats_map=(("statistic", "statistic"), ("p_value", "p_value")),
@@ -1073,7 +1085,15 @@ class TestHostileNames:
                 {
                     "op": "scatter_with_fit",
                     "label": "spaces vs sum",
-                    "params": {"x": SPACED, "y": BUILTIN},
+                    # The color column reaches the export as a bracket-index
+                    # literal and a setNames/list argument; a hostile name here
+                    # proves it is never interpolated bare.
+                    "params": {
+                        "x": SPACED,
+                        "y": BUILTIN,
+                        "size": UNICODE,
+                        "color_by": KEYWORD,
+                    },
                 },
             ],
         }

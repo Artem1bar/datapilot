@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { Plus, Upload, ClipboardPaste, BookOpen, Trash2, Loader2 } from "lucide-react";
+import { Plus, Upload, ClipboardPaste, BookOpen, Trash2, Loader2, ScatterChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -35,6 +35,8 @@ interface AttachMenuProps {
   onTablePaste: (text: string) => void;
   /** Called with the chosen recipe id; only offered when a dataset is attached. */
   onApplyRecipe?: (recipeId: string) => void;
+  /** Opens the scatter plot dialog; only offered when a dataset is attached. */
+  onScatterPlot?: () => void;
   hasDataset?: boolean;
   disabled?: boolean;
 }
@@ -43,6 +45,7 @@ export function AttachMenu({
   onFileAttach,
   onTablePaste,
   onApplyRecipe,
+  onScatterPlot,
   hasDataset = false,
   disabled,
 }: AttachMenuProps) {
@@ -133,6 +136,17 @@ export function AttachMenu({
                 {!hasDataset && (
                   <span className="text-[11px] text-ink-tertiary">Attach a dataset first</span>
                 )}
+              </span>
+            </DropdownMenuItem>
+          )}
+          {onScatterPlot && (
+            <DropdownMenuItem disabled={!hasDataset} onClick={onScatterPlot}>
+              <ScatterChart className="mr-2 h-4 w-4" />
+              <span className="flex flex-col">
+                <span>Scatter plot</span>
+                <span className="text-[11px] text-ink-tertiary">
+                  {hasDataset ? "Two columns, with a fitted line" : "Attach a dataset first"}
+                </span>
               </span>
             </DropdownMenuItem>
           )}

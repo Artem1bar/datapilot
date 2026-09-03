@@ -14,6 +14,7 @@ interface InputBarProps {
   onTablePaste: (text: string) => void;
   onChipClick: (text: string) => void;
   onApplyRecipe?: (recipeId: string) => void;
+  onScatterPlot?: () => void;
   hasDataset?: boolean;
   sending?: boolean;
   disabled?: boolean;
@@ -28,6 +29,7 @@ export function InputBar({
   onTablePaste,
   onChipClick,
   onApplyRecipe,
+  onScatterPlot,
   hasDataset = false,
   sending = false,
   disabled = false,
@@ -58,6 +60,7 @@ export function InputBar({
           onFileAttach={onFileAttach}
           onTablePaste={onTablePaste}
           onApplyRecipe={onApplyRecipe}
+          onScatterPlot={onScatterPlot}
           hasDataset={hasDataset}
           disabled={disabled}
         />

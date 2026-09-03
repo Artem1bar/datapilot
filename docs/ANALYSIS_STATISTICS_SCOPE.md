@@ -90,7 +90,9 @@ Closes the "chart numbers are invented" gap. No new dependencies.
 ### Tier 2 — Bivariate
 
 `correlation_matrix` (Pearson/Spearman/Kendall, with p-values) · `covariance` ·
-`scatter_with_fit` (OLS line, R²) · `group_comparison` (means + CI by group)
+`scatter_with_fit` (OLS line, R², optional `color_by` and bubble `size`, with a
+computed reading of the fit; also served without the planner by
+`POST /analysis/{id}/scatter`) · `group_comparison` (means + CI by group)
 
 Adds: **scipy 1.18.1**
 

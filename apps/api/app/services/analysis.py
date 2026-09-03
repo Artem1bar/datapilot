@@ -156,7 +156,7 @@ def _briefing(df: pd.DataFrame) -> str:
         return "(structural summary unavailable)"
 
 
-def _exported_code(spec: dict[str, Any], question: str) -> dict[str, Any]:
+def exported_code(spec: dict[str, Any], question: str) -> dict[str, Any]:
     """Render the executed spec as runnable scripts, per language.
 
     The trust bridge: a reader can rerun this and get the same number, or find
@@ -398,7 +398,7 @@ def analyze_data(
         provenance = None
 
     if provenance is not None:
-        provenance["code"] = _exported_code(spec, question)
+        provenance["code"] = exported_code(spec, question)
 
     return {
         "answer": answer,

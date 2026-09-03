@@ -13,6 +13,7 @@ import { HistoryCard } from "./HistoryCard";
 import { AnalysisMethodsCard } from "./AnalysisMethodsCard";
 import { AnalysisResultsCard } from "./AnalysisResultsCard";
 import { ErrorCard } from "./ErrorCard";
+import { VisualizationCard } from "./VisualizationCard";
 
 interface CardRendererProps {
   payload: CardPayload;
@@ -80,10 +81,13 @@ export function CardRenderer({
     case "analysis_methods":
       return <AnalysisMethodsCard payload={payload} />;
 
+    case "visualization":
+      return <VisualizationCard payload={payload} onAction={onAction} />;
+
     case "error":
       return <ErrorCard payload={payload} onAction={onAction} />;
 
-    // Phase 3: visualization, report, data_overview cards
+    // Phase 3: report, data_overview cards
     default:
       return (
         <div className="my-2 max-w-[85%]">

@@ -87,3 +87,20 @@ describe("AppStore — theme", () => {
     }
   });
 });
+
+describe("AppStore — scatter plot dialog", () => {
+  it("opens and closes the dialog", () => {
+    useAppStore.getState().openScatterDialog();
+    expect(useAppStore.getState().scatterDialogOpen).toBe(true);
+    useAppStore.getState().closeScatterDialog();
+    expect(useAppStore.getState().scatterDialogOpen).toBe(false);
+  });
+
+  it("does not persist the dialog state", () => {
+    useAppStore.getState().openScatterDialog();
+    const persisted = JSON.parse(
+      localStorage.getItem("datatiger-app") ?? "{}",
+    ) as { state?: Record<string, unknown> };
+    expect(persisted.state?.scatterDialogOpen).toBeUndefined();
+  });
+});

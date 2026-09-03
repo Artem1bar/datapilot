@@ -42,6 +42,8 @@ import numbers
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from app.services.analysis_result import MISSING_GROUP_LABEL
+
 Lines = list[str]
 Emitter = Callable[[dict[str, Any], str, int], Lines]
 
@@ -706,16 +708,33 @@ def _emit_correlation_matrix(params: dict[str, Any], label: str, index: int) -> 
 @_emits("scatter_with_fit")
 def _emit_scatter_with_fit(params: dict[str, Any], label: str, index: int) -> Lines:
     x, y = _q(params, "x"), _q(params, "y")
-    return [
+    size = _q(params, "size") if params.get("size") is not None else None
+    group = _q(params, "color_by") if params.get("color_by") is not None else None
+    # Column order matches the product's result table: x, y, size, color.
+    fields = [f"  x = num({DATA}[[{x}]]),", f"  y = num({DATA}[[{y}]]),"]
+    if size:
+        fields.append(f"  s = num({DATA}[[{size}]]),")
+    if group:
+        fields.append(f"  g = as.character({DATA}[[{group}]]),")
+    required = ", ".join(f'"{name}"' for name in (["x", "y"] + (["s"] if size else [])))
+    points = [
         f"points_{index} <- data.frame(",
-        f"  x = num({DATA}[[{x}]]),",
-        f"  y = num({DATA}[[{y}]]),",
+        *fields,
         "  stringsAsFactors = FALSE",
         ")",
-        f"points_{index} <- points_{index}[complete.cases(points_{index}), , drop = FALSE]",
+        f"points_{index} <- points_{index}[complete.cases(points_{index}[, c({required})]), , drop = FALSE]",
+    ]
+    if group:
+        missing = r_literal(MISSING_GROUP_LABEL)
+        points += [
+            "# A missing color label is kept and named: the point is still a measurement.",
+            f'points_{index}$g[is.na(points_{index}$g) | points_{index}$g == ""] <- {missing}',
+        ]
+    names = "c(" + ", ".join(name for name in (x, y, size, group) if name) + ")"
+    return points + [
         f"fit_{index} <- lm(y ~ x, data = points_{index})",
         f"summary_{index} <- summary(fit_{index})",
-        f"result_{index} <- setNames(points_{index}, c({x}, {y}))",
+        f"result_{index} <- setNames(points_{index}, {names})",
         f"stats_{index} <- list(",
         f"  slope = round(unname(coef(fit_{index})[2]), 6),",
         f"  intercept = round(unname(coef(fit_{index})[1]), 6),",

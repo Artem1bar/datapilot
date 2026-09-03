@@ -17,6 +17,9 @@ from scipy import stats as scipy_stats
 
 from app.services.analysis_executor import (
     MAX_RESULT_ROWS,
+    MAX_SCATTER_GROUPS,
+    MAX_SCATTER_POINTS,
+    SCATTER_SAMPLE_SEED,
     ExecutionError,
     apply_filter,
     build_chart,
@@ -164,6 +167,134 @@ class TestScatterWithFit:
         df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
         result = _run(df, "scatter_with_fit", {"x": "x", "y": "y"})
         assert "y = " in result.stats["fit"]
+
+    def test_carries_a_plot_point_for_every_complete_row(self):
+        df = pd.DataFrame({"x": [1.0, 2.0, None, 4.0], "y": [2.0, 4.0, 6.0, 8.0]})
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y"})
+        assert result.plot is not None
+        assert (result.plot.x, result.plot.y, result.plot.group) == ("x", "y", None)
+        assert result.plot.rows == [[1.0, 2.0], [2.0, 4.0], [4.0, 8.0]]
+        assert result.plot.total == 3
+        assert result.plot.sampled is False
+
+    def test_samples_a_large_frame_for_plotting_but_fits_on_every_row(self):
+        n = MAX_SCATTER_POINTS * 3
+        x = np.arange(n, dtype=float)
+        df = pd.DataFrame({"x": x, "y": 2 * x + 1})
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y"})
+
+        assert result.n == n
+        assert result.stats["slope"] == pytest.approx(2.0)
+        assert len(result.plot.rows) == MAX_SCATTER_POINTS
+        assert result.plot.total == n
+        assert result.plot.sampled is True
+        # A sample, not a prefix: the first 2,000 rows of a file sorted by x
+        # would be a picture of the sort order, not of the relationship.
+        assert max(row[0] for row in result.plot.rows) > n * 0.9
+        # Deterministic: the same frame plots the same points every time.
+        again = _run(df, "scatter_with_fit", {"x": "x", "y": "y"})
+        assert again.plot.rows == result.plot.rows
+        assert any("sample" in note for note in result.notes)
+
+    def test_color_by_labels_each_point_with_its_group(self):
+        df = pd.DataFrame(
+            {
+                "x": [1.0, 2.0, 3.0, 4.0],
+                "y": [1.0, 2.0, 3.0, 4.0],
+                "g": ["a", "b", None, "a"],
+            }
+        )
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y", "color_by": "g"})
+        assert result.plot.group == "g"
+        assert [row[2] for row in result.plot.rows] == ["a", "b", "(missing)", "a"]
+        # A missing colour label is not a missing measurement: the point stays
+        # in the fit and on the chart.
+        assert result.n == 4
+        assert result.columns == ["x", "y", "g"]
+
+    def test_a_sampled_plot_still_names_every_group(self):
+        # A rare category can miss the 2,000-point sample entirely. The legend
+        # and the group count come from every complete row, and the result
+        # says which groups the sample does not show rather than losing them.
+        n = MAX_SCATTER_POINTS * 5
+        df = pd.DataFrame(
+            {"x": np.arange(n, dtype=float), "y": np.arange(n, dtype=float), "g": "common"}
+        )
+        drawn = set(df.sample(n=MAX_SCATTER_POINTS, random_state=SCATTER_SAMPLE_SEED).index)
+        left_out = next(index for index in df.index if index not in drawn)
+        df.loc[left_out, "g"] = "rare"
+
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y", "color_by": "g"})
+        assert result.plot.groups == ("common", "rare")
+        assert result.plot.unplotted_groups == ("rare",)
+        assert {row[2] for row in result.plot.rows} == {"common"}
+        assert any("'rare'" in note and "1 row" in note for note in result.notes)
+
+    def test_size_adds_a_third_value_per_point_and_its_range(self):
+        df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0], "s": [10.0, 30.0, 20.0]})
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y", "size": "s"})
+        assert result.plot.size == "s"
+        assert result.plot.rows == [[1.0, 2.0, 10.0], [2.0, 4.0, 30.0], [3.0, 6.0, 20.0]]
+        # The range comes from every complete row, so a sampled chart can
+        # still scale its bubbles against the true extremes.
+        assert result.plot.size_range == (10.0, 30.0)
+        assert result.columns == ["x", "y", "s"]
+
+    def test_size_and_colour_together_keep_a_fixed_column_order(self):
+        df = pd.DataFrame(
+            {"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0], "s": [1.0, 2.0, 3.0], "g": ["a", "b", "a"]}
+        )
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y", "size": "s", "color_by": "g"})
+        assert result.plot.rows[1] == [2.0, 4.0, 2.0, "b"]
+        assert result.plot.groups == ("a", "b")
+
+    def test_a_missing_size_excludes_the_row_from_plot_and_fit(self):
+        # A bubble with no size cannot be drawn, and a point that is not drawn
+        # must not silently shape the line either.
+        df = pd.DataFrame(
+            {"x": [1.0, 2.0, 3.0, 4.0], "y": [2.0, 4.0, 6.0, 8.0], "s": [1.0, None, 3.0, 4.0]}
+        )
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y", "size": "s"})
+        assert result.n == 3
+        assert result.n_excluded == 1
+        assert len(result.plot.rows) == 3
+
+    def test_a_missing_label_does_not_count_toward_the_group_limit(self):
+        # The validator counts distinct non-missing values; execution must
+        # agree, or a column that validates fails one step later with a count
+        # one higher than the column really has.
+        n = MAX_SCATTER_GROUPS
+        df = pd.DataFrame(
+            {
+                "x": np.arange(n + 1, dtype=float),
+                "y": np.arange(n + 1, dtype=float),
+                "g": [f"g{i}" for i in range(n)] + [None],
+            }
+        )
+        result = _run(df, "scatter_with_fit", {"x": "x", "y": "y", "color_by": "g"})
+        assert len(result.plot.groups) == n + 1
+        assert result.plot.groups[-1] == "(missing)"
+
+    def test_a_constant_x_reports_an_uncomputed_fit_quietly(self):
+        import warnings
+
+        df = pd.DataFrame({"x": [1.0, 1.0, 1.0, 1.0], "y": [1.0, 2.0, 3.0, 4.0]})
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", RuntimeWarning)
+            result = _run(df, "scatter_with_fit", {"x": "x", "y": "y"})
+        assert result.stats["slope"] is None
+
+    def test_color_by_with_too_many_groups_is_refused(self):
+        n = MAX_SCATTER_GROUPS + 1
+        df = pd.DataFrame(
+            {
+                "x": np.arange(n, dtype=float),
+                "y": np.arange(n, dtype=float),
+                "g": [f"g{i}" for i in range(n)],
+            }
+        )
+        with pytest.raises(ExecutionError, match="distinct"):
+            _run(df, "scatter_with_fit", {"x": "x", "y": "y", "color_by": "g"})
 
 
 class TestGroupComparison:
@@ -386,6 +517,154 @@ class TestBuildChart:
             {"operations": [{"op": "value_counts", "label": "T", "params": {"column": "region"}}]},
         )
         assert build_chart({"type": "bar", "operation": 5}, results) is None
+
+    def test_scatter_chart_carries_the_fit_and_every_plotted_point(self):
+        n = MAX_RESULT_ROWS + 50
+        x = np.arange(n, dtype=float)
+        df = pd.DataFrame({"x": x, "y": 3 * x + 5, "g": ["a", "b"] * (n // 2)})
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {
+                        "op": "scatter_with_fit",
+                        "label": "y vs x",
+                        "params": {"x": "x", "y": "y", "color_by": "g"},
+                    }
+                ]
+            },
+        )
+        chart = build_chart({"type": "scatter", "operation": 0}, results)
+
+        assert chart is not None
+        assert chart["chart_type"] == "scatter"
+        assert (chart["x_field"], chart["y_field"]) == ("x", "y")
+        # The chart is not the 200-row table preview: it gets every plotted point.
+        assert len(chart["data"]) == n
+        assert chart["data"][0] == {"x": 0.0, "y": 5.0, "group": "a"}
+        fit = chart["options"]["fit"]
+        assert fit["slope"] == pytest.approx(3.0)
+        assert fit["intercept"] == pytest.approx(5.0)
+        assert fit["r_squared"] == pytest.approx(1.0)
+        assert chart["options"]["group_field"] == "g"
+        assert chart["options"]["groups"] == ["a", "b"]
+        assert chart["options"]["n"] == n
+        assert chart["options"]["plotted"] == n
+        assert chart["options"]["sampled"] is False
+        assert chart["options"]["computed"] is True
+
+    def test_scatter_chart_without_a_colour_has_no_group_keys(self):
+        df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {"op": "scatter_with_fit", "label": "T", "params": {"x": "x", "y": "y"}}
+                ]
+            },
+        )
+        chart = build_chart({"type": "scatter", "operation": 0}, results)
+        assert chart["data"] == [{"x": 1.0, "y": 2.0}, {"x": 2.0, "y": 4.0}, {"x": 3.0, "y": 6.0}]
+        assert chart["options"]["groups"] == []
+        assert chart["options"]["group_field"] is None
+
+    def test_scatter_chart_legend_keeps_groups_the_sample_lacks(self):
+        n = MAX_SCATTER_POINTS * 5
+        df = pd.DataFrame(
+            {"x": np.arange(n, dtype=float), "y": np.arange(n, dtype=float), "g": "common"}
+        )
+        drawn = set(df.sample(n=MAX_SCATTER_POINTS, random_state=SCATTER_SAMPLE_SEED).index)
+        left_out = next(index for index in df.index if index not in drawn)
+        df.loc[left_out, "g"] = "rare"
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {
+                        "op": "scatter_with_fit",
+                        "label": "T",
+                        "params": {"x": "x", "y": "y", "color_by": "g"},
+                    }
+                ]
+            },
+        )
+        chart = build_chart({"type": "scatter", "operation": 0}, results)
+        assert chart["options"]["groups"] == ["common", "rare"]
+        assert chart["options"]["unplotted_groups"] == ["rare"]
+
+    def test_a_size_makes_the_chart_a_bubble_chart(self):
+        df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0], "s": [10.0, 30.0, 20.0]})
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {
+                        "op": "scatter_with_fit",
+                        "label": "T",
+                        "params": {"x": "x", "y": "y", "size": "s"},
+                    }
+                ]
+            },
+        )
+        chart = build_chart({"type": "scatter", "operation": 0}, results)
+        assert chart["chart_type"] == "bubble"
+        assert chart["data"][1] == {"x": 2.0, "y": 4.0, "size": 30.0}
+        assert chart["options"]["size_field"] == "s"
+        assert chart["options"]["size_range"] == [10.0, 30.0]
+
+    def test_scatter_chart_without_a_size_has_no_size_keys(self):
+        df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [2.0, 4.0, 6.0]})
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {"op": "scatter_with_fit", "label": "T", "params": {"x": "x", "y": "y"}}
+                ]
+            },
+        )
+        chart = build_chart({"type": "bubble", "operation": 0}, results)
+        # A bubble chart was asked for but nothing sizes the points: say so by
+        # drawing a scatter, not by inventing a size.
+        assert chart["chart_type"] == "scatter"
+        assert chart["options"]["size_field"] is None
+        assert chart["options"]["size_range"] is None
+
+    def test_scatter_chart_carries_a_reading_of_the_fit(self):
+        x = np.arange(50, dtype=float)
+        df = pd.DataFrame({"x": x, "y": 2 * x + np.random.default_rng(1).normal(0, 5, 50)})
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {"op": "scatter_with_fit", "label": "T", "params": {"x": "x", "y": "y"}}
+                ]
+            },
+        )
+        chart = build_chart({"type": "scatter", "operation": 0}, results)
+        reading = chart["options"]["interpretation"]
+        assert reading["direction"] == "positive"
+        assert reading["strength"] == "strong"
+        assert reading["significant"] is True
+        assert any("higher x goes with higher y" in s for s in reading["summary"])
+        assert any("causation" in c for c in reading["caveats"])
+        assert reading["next_steps"][0]["question"]
+
+    def test_scatter_chart_lists_the_missing_group_last(self):
+        df = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [1.0, 2.0, 3.0], "g": [None, "b", "a"]})
+        results = execute_spec(
+            df,
+            {
+                "operations": [
+                    {
+                        "op": "scatter_with_fit",
+                        "label": "T",
+                        "params": {"x": "x", "y": "y", "color_by": "g"},
+                    }
+                ]
+            },
+        )
+        chart = build_chart({"type": "scatter", "operation": 0}, results)
+        assert chart["options"]["groups"] == ["a", "b", "(missing)"]
 
 
 class TestDegenerateStatistics:

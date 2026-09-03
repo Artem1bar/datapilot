@@ -8,8 +8,6 @@ import {
   PieChart,
   Pie,
   Cell,
-  ScatterChart,
-  Scatter,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -18,24 +16,14 @@ import {
 } from "recharts";
 import { Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ScatterPlot } from "@/components/charts/ScatterPlot";
+import { CHART_COLORS } from "@/components/charts/palette";
 import type { ChartConfig } from "@/types";
 
 interface ChartRendererProps {
   config: ChartConfig;
   data: Record<string, unknown>[];
 }
-
-/** LSU brand palette — purple-dominant with gold accents */
-const LSU_COLORS = [
-  "#461D7C", // LSU purple
-  "#FDD023", // LSU gold
-  "#6B32A8", // lighter purple
-  "#E8B820", // deeper gold
-  "#8B5CF6", // violet
-  "#F59E0B", // amber
-  "#7C3AED", // indigo-purple
-  "#D97706", // warm orange
-];
 
 /**
  * Detect whether Claude-generated data uses {x, y} generic keys
@@ -97,6 +85,13 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
     tickLine: false,
   };
 
+  const tooltipStyle = {
+    background: "var(--surface-primary)",
+    border: "1px solid var(--line)",
+    borderRadius: 8,
+    fontSize: 12,
+  };
+
   const renderChart = () => {
     switch (config.chart_type) {
       case "bar":
@@ -106,14 +101,7 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
             <CartesianGrid {...gridProps} />
             <XAxis dataKey={xKey} {...axisProps} />
             <YAxis {...axisProps} />
-            <Tooltip
-              contentStyle={{
-                background: "var(--surface-primary)",
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={tooltipStyle} />
             <Bar
               dataKey={yKey}
               fill="#461D7C"
@@ -137,14 +125,7 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
             <CartesianGrid {...gridProps} />
             <XAxis dataKey={xKey} {...axisProps} />
             <YAxis {...axisProps} />
-            <Tooltip
-              contentStyle={{
-                background: "var(--surface-primary)",
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={tooltipStyle} />
             <Line
               type="monotone"
               dataKey={yKey}
@@ -174,38 +155,12 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
               animationEasing="ease-out"
             >
               {data.map((_, i) => (
-                <Cell key={i} fill={LSU_COLORS[i % LSU_COLORS.length]} />
+                <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
               ))}
             </Pie>
-            <Tooltip
-              contentStyle={{
-                background: "var(--surface-primary)",
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
+            <Tooltip contentStyle={tooltipStyle} />
             <Legend iconSize={10} wrapperStyle={{ fontSize: 12 }} />
           </PieChart>
-        );
-
-      case "scatter":
-        return (
-          <ScatterChart>
-            <CartesianGrid {...gridProps} />
-            <XAxis dataKey={xKey} {...axisProps} name={config.x_field} />
-            <YAxis dataKey={yKey} {...axisProps} name={config.y_field} />
-            <Tooltip
-              cursor={{ strokeDasharray: "3 3" }}
-              contentStyle={{
-                background: "var(--surface-primary)",
-                border: "1px solid var(--line)",
-                borderRadius: 8,
-                fontSize: 12,
-              }}
-            />
-            <Scatter data={data} fill="#461D7C" opacity={0.75} />
-          </ScatterChart>
         );
 
       default:
@@ -216,6 +171,19 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
         );
     }
   };
+
+  // A scatter draws its own axes, legend and caption, and needs the height
+  // for them; the other charts share one fixed-height container.
+  const chart =
+    config.chart_type === "scatter" || config.chart_type === "bubble" ? (
+      <ScatterPlot config={config} />
+    ) : (
+      <div className="h-[240px] w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          {renderChart()}
+        </ResponsiveContainer>
+      </div>
+    );
 
   return (
     <div className="space-y-3 animate-fade-in">
@@ -235,11 +203,7 @@ export function ChartRenderer({ config, data }: ChartRendererProps) {
           </Button>
         </div>
       )}
-      <div ref={containerRef} className="h-[240px] w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          {renderChart()}
-        </ResponsiveContainer>
-      </div>
+      <div ref={containerRef}>{chart}</div>
     </div>
   );
 }

@@ -32,6 +32,44 @@ class ExecutionError(RuntimeError):
     """An operation failed at runtime despite passing validation."""
 
 
+# The label a plotted point gets when its color column is missing. The point
+# stays on the chart and in the fit: a missing color is not a missing
+# measurement. Shared with the code export so the emitted scripts label the
+# same rows the same way.
+MISSING_GROUP_LABEL = "(missing)"
+
+
+@dataclass(frozen=True)
+class PlotPoints:
+    """The rows a chart draws when it needs more than the result table shows.
+
+    The table is capped at ``MAX_RESULT_ROWS`` because it is a preview of a
+    table. A scatter plot of the first 200 rows of a file sorted by date is a
+    picture of the sort order, not of the relationship, so a scatter carries
+    its own points: every complete row, or a seeded random sample of them,
+    and says which.
+    """
+
+    x: str
+    y: str
+    group: str | None
+    rows: list[list[Any]]
+    # How many complete rows there were, whether or not all of them are here.
+    total: int
+    sampled: bool
+    seed: int | None = None
+    # Every color group among the complete rows, in legend order — from all
+    # rows, not the sample, so a rare category the sample missed is still a
+    # group. The ones with no point in ``rows`` are named separately.
+    groups: tuple[str, ...] = ()
+    unplotted_groups: tuple[str, ...] = ()
+    # A third numeric column that sizes each point (a bubble chart), and its
+    # range over every complete row so a sampled chart still scales bubbles
+    # against the true extremes. Rows are [x, y, size?, group?].
+    size: str | None = None
+    size_range: tuple[float, float] | None = None
+
+
 @dataclass(frozen=True)
 class OperationResult:
     """One computed table, with the provenance needed to report it honestly."""
@@ -52,6 +90,8 @@ class OperationResult:
     # key on this instead of on the list index, or everything after the first
     # failure is attributed to the wrong operation.
     spec_index: int = UNPLANNED
+    # Points to draw, for operations whose chart is not their result table.
+    plot: PlotPoints | None = None
 
     def planned_at(self, index: int) -> bool:
         """Whether this result came from ``spec["operations"][index]``."""
@@ -112,6 +152,7 @@ def frame_to_result(
     notes: list[str] | None = None,
     stats_payload: dict[str, Any] | None = None,
     spec_index: int = UNPLANNED,
+    plot: PlotPoints | None = None,
 ) -> OperationResult:
     """Package a result frame, truncating to ``MAX_RESULT_ROWS``."""
     total = len(df)
@@ -130,6 +171,7 @@ def frame_to_result(
         notes=all_notes,
         stats=clean_stats(stats_payload) if stats_payload else {},
         spec_index=spec_index,
+        plot=plot,
     )
 
 

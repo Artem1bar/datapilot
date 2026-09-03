@@ -40,6 +40,8 @@ import numbers
 from collections.abc import Callable, Sequence
 from typing import Any
 
+from app.services.analysis_result import MISSING_GROUP_LABEL
+
 Lines = list[str]
 
 # (params, label, position) -> lines of Python. ``position`` is the operation's
@@ -605,8 +607,21 @@ def _emit_correlation_matrix(params: dict[str, Any], label: str, index: int) -> 
 @_emits("scatter_with_fit")
 def _emit_scatter_with_fit(params: dict[str, Any], label: str, index: int) -> Lines:
     x, y = _q(params, "x"), _q(params, "y")
-    return [
-        f"subset_{index} = {DATA}[[{x}, {y}]].dropna()",
+    size = _q(params, "size") if params.get("size") is not None else None
+    group = _q(params, "color_by") if params.get("color_by") is not None else None
+    # Column order matches the product's result table: x, y, size, color.
+    columns = ", ".join(name for name in (x, y, size, group) if name)
+    required = ", ".join(name for name in (x, y, size) if name)
+    subset = [f"subset_{index} = {DATA}[[{columns}]].dropna(subset=[{required}])"]
+    if group:
+        missing = py_literal(MISSING_GROUP_LABEL)
+        subset += [
+            "# A missing color label is kept and named: the point is still a measurement.",
+            f"subset_{index}[{group}] = (",
+            f"    subset_{index}[{group}].astype('string').fillna({missing}).astype(object)",
+            ")",
+        ]
+    return subset + [
         f"fit_{index} = stats.linregress(subset_{index}[{x}], subset_{index}[{y}])",
         f"result_{index} = subset_{index}",
         f"stats_{index} = {{",

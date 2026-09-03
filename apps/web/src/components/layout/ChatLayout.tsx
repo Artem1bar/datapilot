@@ -4,6 +4,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAppStore } from "@/stores/app-store";
 import { SessionSidebar } from "./SessionSidebar";
 import { ChartPanel } from "@/components/charts/ChartPanel";
+import { ScatterPlotLauncher } from "@/components/charts/ScatterPlotLauncher";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { Toaster } from "@/components/ui/toaster";
 import { BarChart3 } from "lucide-react";
@@ -37,6 +38,7 @@ export function ChatLayout() {
         <main className="flex-1 overflow-hidden">
           <Outlet />
         </main>
+        <ScatterPlotLauncher />
         <Toaster />
       </div>
     );
@@ -80,6 +82,7 @@ export function ChatLayout() {
         <ChartPanel />
       </div>
 
+      <ScatterPlotLauncher />
       <Toaster />
     </div>
   );

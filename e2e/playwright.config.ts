@@ -22,6 +22,11 @@ export default defineConfig({
     baseURL: `http://localhost:${WEB_PORT}`,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
+    // Run against a browser build already on the machine when the pinned
+    // revision is not installed (e.g. E2E_CHROMIUM_PATH=~/Library/Caches/ms-playwright/…/chrome-headless-shell).
+    ...(process.env.E2E_CHROMIUM_PATH
+      ? { launchOptions: { executablePath: process.env.E2E_CHROMIUM_PATH } }
+      : {}),
   },
   webServer: [
     {

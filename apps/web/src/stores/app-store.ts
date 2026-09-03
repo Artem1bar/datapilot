@@ -8,6 +8,9 @@ interface AppState {
   sidebarOpen: boolean;
   chartPanelOpen: boolean;
   charts: ChartConfig[];
+  // One dialog, opened from the attach menu or the chart panel; the launcher
+  // that renders it lives in the layout.
+  scatterDialogOpen: boolean;
   theme: Theme;
 
   toggleSidebar: () => void;
@@ -16,6 +19,8 @@ interface AppState {
   setChartPanelOpen: (open: boolean) => void;
   addCharts: (charts: ChartConfig[]) => void;
   clearCharts: () => void;
+  openScatterDialog: () => void;
+  closeScatterDialog: () => void;
   setTheme: (theme: Theme) => void;
 }
 
@@ -25,6 +30,7 @@ export const useAppStore = create<AppState>()(
       sidebarOpen: true,
       chartPanelOpen: false,
       charts: [],
+      scatterDialogOpen: false,
       theme: "system",
 
       toggleSidebar: () =>
@@ -39,12 +45,15 @@ export const useAppStore = create<AppState>()(
         set((state) => ({ charts: [...state.charts, ...charts] })),
       clearCharts: () => set({ charts: [] }),
 
+      openScatterDialog: () => set({ scatterDialogOpen: true }),
+      closeScatterDialog: () => set({ scatterDialogOpen: false }),
+
       setTheme: (theme) => set({ theme }),
     }),
     {
       // Pre-rename localStorage key — changing it would drop users' local settings.
       name: "datatiger-app",
-      // Don't persist charts — they're session-specific
+      // Don't persist charts or dialog state — they're session-specific
       partialize: (state) => ({
         sidebarOpen: state.sidebarOpen,
         theme: state.theme,

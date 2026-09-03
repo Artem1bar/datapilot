@@ -12,6 +12,7 @@ import pytest
 
 from app.services.analysis_spec import (
     MAX_OPERATIONS,
+    MAX_SCATTER_GROUPS,
     OPERATIONS,
     ColumnRoles,
     describe_capabilities,
@@ -384,3 +385,103 @@ class TestCapabilitiesIncludesTier3:
         rendered = describe_capabilities()
         for op in OPERATIONS:
             assert f"- {op} [tier " in rendered
+
+
+class TestScatterColorBy:
+    """A third column colours the points; it must be one a legend can hold."""
+
+    @staticmethod
+    def _scatter(**params):
+        return _spec(
+            operations=[
+                {
+                    "op": "scatter_with_fit",
+                    "label": "T",
+                    "params": {"x": "units", "y": "revenue", **params},
+                }
+            ]
+        )
+
+    def test_colour_by_a_category_passes(self, roles):
+        assert validate_spec(self._scatter(color_by="region"), roles) == []
+
+    def test_colour_by_is_optional(self, roles):
+        assert validate_spec(self._scatter(), roles) == []
+
+    def test_colour_must_not_be_an_axis(self, roles):
+        problems = validate_spec(self._scatter(color_by="units"), roles)
+        assert len(problems) == 1
+        assert "color_by" in problems[0] and "axis" in problems[0]
+
+    def test_colour_rejects_a_datetime_column(self, roles):
+        problems = validate_spec(self._scatter(color_by="order_date"), roles)
+        assert len(problems) == 1
+        assert "date" in problems[0]
+
+    def test_colour_rejects_a_column_that_is_not_in_the_dataset(self, roles):
+        problems = validate_spec(self._scatter(color_by="nope"), roles)
+        assert len(problems) == 1
+        assert "nope" in problems[0]
+
+    def test_colour_rejects_a_high_cardinality_category(self):
+        n = MAX_SCATTER_GROUPS + 1
+        df = pd.DataFrame({"x": range(n), "y": range(n), "label": [f"v{i}" for i in range(n)]})
+        spec = _spec(
+            operations=[
+                {
+                    "op": "scatter_with_fit",
+                    "label": "T",
+                    "params": {"x": "x", "y": "y", "color_by": "label"},
+                }
+            ]
+        )
+        problems = validate_spec(spec, ColumnRoles.from_dataframe(df))
+        assert len(problems) == 1
+        assert "distinct" in problems[0] and str(MAX_SCATTER_GROUPS) in problems[0]
+
+    def test_capabilities_offer_the_colour(self):
+        assert "color_by" in describe_capabilities()
+
+
+class TestScatterSize:
+    """A third numeric column sizes the points: a bubble chart."""
+
+    @staticmethod
+    def _scatter(**params):
+        return _spec(
+            operations=[
+                {
+                    "op": "scatter_with_fit",
+                    "label": "T",
+                    "params": {"x": "units", "y": "revenue", **params},
+                }
+            ]
+        )
+
+    def test_a_numeric_size_passes(self):
+        df = pd.DataFrame({"units": [1, 2], "revenue": [1.0, 2.0], "orders": [3, 4]})
+        assert validate_spec(self._scatter(size="orders"), ColumnRoles.from_dataframe(df)) == []
+
+    def test_size_must_be_numeric(self, roles):
+        problems = validate_spec(self._scatter(size="region"), roles)
+        assert len(problems) == 1
+        assert "size" in problems[0] and "not numeric" in problems[0]
+
+    def test_size_must_not_be_an_axis(self, roles):
+        problems = validate_spec(self._scatter(size="revenue"), roles)
+        assert len(problems) == 1
+        assert "size" in problems[0] and "axis" in problems[0]
+
+    def test_size_and_colour_must_differ(self):
+        df = pd.DataFrame({"units": [1, 2, 3], "revenue": [1.0, 2.0, 3.0], "tier": [1, 2, 1]})
+        problems = validate_spec(
+            self._scatter(size="tier", color_by="tier"), ColumnRoles.from_dataframe(df)
+        )
+        assert len(problems) == 1
+        assert "color_by" in problems[0] and "size" in problems[0]
+
+    def test_bubble_is_a_chart_type(self, roles):
+        assert validate_spec(_spec(chart={"type": "bubble", "operation": 0}), roles) == []
+
+    def test_capabilities_offer_the_size(self):
+        assert "size" in describe_capabilities()

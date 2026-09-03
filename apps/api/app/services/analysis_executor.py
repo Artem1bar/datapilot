@@ -33,7 +33,16 @@ from app.services.analysis_result import (  # noqa: F401  (re-exported for calle
     to_python,
     with_spec_index,
 )
-from app.services.analysis_spec import ColumnRoles  # noqa: F401  (re-exported for callers)
+from app.services.analysis_scatter import (  # noqa: F401  (constants re-exported for callers)
+    MAX_SCATTER_POINTS,
+    SCATTER_SAMPLE_SEED,
+    op_scatter_with_fit,
+    scatter_chart,
+)
+from app.services.analysis_spec import (  # noqa: F401  (re-exported for callers)
+    MAX_SCATTER_GROUPS,
+    ColumnRoles,
+)
 from app.services.analysis_survey import SURVEY_OPERATIONS
 from app.services.analysis_timeseries import TIMESERIES_OPERATIONS
 
@@ -358,40 +367,6 @@ def _op_correlation_matrix(df: pd.DataFrame, params: dict[str, Any], label: str)
     )
 
 
-def _op_scatter_with_fit(df: pd.DataFrame, params: dict[str, Any], label: str) -> OperationResult:
-    x_col = params["x"]
-    y_col = params["y"]
-
-    subset = df[[x_col, y_col]].dropna()
-    excluded = len(df) - len(subset)
-    if len(subset) < 3:
-        raise ExecutionError(
-            f"scatter_with_fit: only {len(subset)} complete row(s); need at least 3"
-        )
-
-    result = stats.linregress(subset[x_col], subset[y_col])
-    stats_payload = {
-        "slope": round(float(result.slope), 6),
-        "intercept": round(float(result.intercept), 6),
-        "r": round(float(result.rvalue), 4),
-        "r_squared": round(float(result.rvalue**2), 4),
-        "p_value": float(result.pvalue),
-        "std_err": round(float(result.stderr), 6),
-        "fit": f"{y_col} = {result.slope:.4g} × {x_col} + {result.intercept:.4g}",
-    }
-    notes = [f"Excluded {excluded} row(s) with missing values."] if excluded else []
-    # Scatter payloads are capped by frame_to_result; the fit is computed on all rows.
-    return frame_to_result(
-        subset,
-        op="scatter_with_fit",
-        label=label,
-        n=len(subset),
-        n_excluded=excluded,
-        notes=notes + ["The fitted line is computed on all complete rows, not just those shown."],
-        stats_payload=stats_payload,
-    )
-
-
 def _name_groups(labels: list[str]) -> str:
     """Render a group list for prose, without pasting a hundred category names."""
     if len(labels) <= MAX_NAMED_GROUPS:
@@ -525,7 +500,7 @@ _DISPATCH = {
     "pivot": _op_pivot,
     "resample": _op_resample,
     "correlation_matrix": _op_correlation_matrix,
-    "scatter_with_fit": _op_scatter_with_fit,
+    "scatter_with_fit": op_scatter_with_fit,
     "group_comparison": _op_group_comparison,
     **INFERENCE_OPERATIONS,
     **CATEGORICAL_OPERATIONS,
@@ -640,6 +615,8 @@ def build_chart(
         return None
     if len(result.columns) < 2 or not result.rows:
         return None
+    if chart.get("type") in ("scatter", "bubble") and result.plot is not None:
+        return scatter_chart(result, result.plot)
 
     x_field = result.columns[0]
     requested = chart.get("y")
