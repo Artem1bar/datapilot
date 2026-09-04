@@ -52,3 +52,12 @@ tmp/
 
 # Claude AI
 .claude/
+
+# Public-release hygiene
+.env.*
+!.env.example
+.next/
+*.db
+*.sqlite
+playwright-report/
+test-results/
