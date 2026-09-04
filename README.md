@@ -9,9 +9,12 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 
 [![DataPilot chat UI](docs/screenshot.png)](https://datapilot-eight.vercel.app)
 
-**Status:** live at the link above. CI runs lint, the backend and frontend
-suites and the Playwright end-to-end flow on every push to `main`; the API
-image is built by a manual Deploy workflow.
+**Status:** the web app is live at the link above; the API behind it is not
+hosted yet, so on the live URL uploads and analysis stop with a "backend not
+connected" notice until `VITE_API_URL` points at a running API (see
+[Deploying](#deploying)). CI runs lint, the backend and frontend suites and
+the Playwright end-to-end flow on every push to `main`; the API image is
+built by a manual Deploy workflow.
 
 ## Features
 
@@ -136,7 +139,7 @@ The app will be available at `http://localhost:5174`.
 | `DEV_AUTH_BYPASS` | `true` locally to skip auth; ignored in production |
 | `MAX_UPLOAD_BYTES` | Max file upload size in bytes (default: `52428800` = 50 MB) |
 | `CORS_ORIGINS` | Comma-separated allowed origins (e.g. `http://localhost:5174`) |
-| `VITE_API_URL` | Production API base URL (leave blank for local dev) |
+| `VITE_API_URL` | Origin of the deployed API, e.g. `https://api.example.com` — no `/api/v1` suffix; leave blank for local dev (the Vite proxy handles it) |
 | `ENVIRONMENT` | `development` / `staging` / `production` (production enforces auth) |
 
 ## Tests
@@ -241,6 +244,27 @@ pnpm --filter @datapilot/e2e test
 ```
 
 Boots the full stack (dedicated Postgres DB, Redis db 1, stubbed Anthropic API) and drives the golden path — upload → plan → toggle → apply → validate → results → compare → recipe — plus session-switching and refresh-mid-job re-attach. Needs local Postgres/Redis/MinIO (the dev services).
+
+## Deploying
+
+The frontend and the API deploy separately, and the app only works once both
+are up and pointed at each other.
+
+- **Frontend — Vercel.** The root `vercel.json` builds `apps/web` into a
+  static site and rewrites every path to `index.html`; there are no serverless
+  functions, so nothing on Vercel runs Python and backend secrets set on the
+  Vercel project are never read.
+- **API — any Docker host** (Railway per `docs/DEPLOYMENT.md`, or Fly, Render,
+  a VPS with `docker-compose.yml`). It needs Postgres, Redis, an S3-compatible
+  bucket and a Celery worker alongside the web process — uploads are profiled,
+  cleaned and exported by the worker, so the API cannot run as a serverless
+  function.
+- **Wiring.** On Vercel set `VITE_API_URL` to the API's origin and
+  `VITE_CLERK_PUBLISHABLE_KEY`; add the API origin to `connect-src` in
+  `vercel.json`; on the API set `CORS_ORIGINS` to the Vercel URL. Then
+  redeploy the frontend (`VITE_*` values are baked in at build time).
+
+The full checklist, variable by variable, is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## API Overview
 

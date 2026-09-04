@@ -9,6 +9,28 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
 
+### Live deployment: an honest failure until the API is hosted
+
+- The Vercel deployment is the static frontend only. With `VITE_API_URL`
+  unset the app called its own origin, where a POST got a bare 405 and a GET
+  got the SPA's HTML — the first upload died with "Upload failed: Request
+  failed with status code 405". The API client now recognises an HTML or
+  bodiless 404/405 answer as "no DataPilot API at this address" and a
+  network or CSP failure as "API unreachable", and says which origin it
+  tried and which setting fixes it
+- A banner probes `GET /health` on load and names the problem (backend not
+  deployed, unreachable, or blocked by the page's CSP) before the first
+  upload discovers it
+- `VITE_API_URL` is normalised: surrounding whitespace, trailing slashes and
+  a pasted `/api/v1` suffix no longer produce a double path
+- The CSP allowed `style-src 'self'` only, which blocked the Google Fonts
+  stylesheet `index.css` imports; DM Sans and JetBrains Mono now load
+- Removed `apps/web/vercel.json`, a stale duplicate whose build command named
+  a package that does not exist; the root `vercel.json` is the one Vercel uses
+- README says the API is not hosted yet; DEPLOYMENT.md names the real
+  `R2_ENDPOINT_URL` setting (there is no `R2_ACCOUNT_ID`) and the exact
+  Vercel, CSP and CORS values
+
 ### Scatter plotter — a chart on demand, without the planner
 
 - `POST /analysis/{dataset_id}/scatter` plots one numeric column against

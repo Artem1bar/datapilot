@@ -23,7 +23,7 @@ is an account/dashboard action only the project owner can do.
    | `DATABASE_URL` | Railway Postgres URL, changed to `postgresql+asyncpg://…` |
    | `REDIS_URL` | Railway Redis URL |
    | `ANTHROPIC_API_KEY` | production key (set a spend limit in the Anthropic console) |
-   | `R2_ACCOUNT_ID` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | from step 2 below |
+   | `R2_ENDPOINT_URL` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_BUCKET_NAME` | from step 2 below |
    | `CLERK_JWT_ISSUER` | `https://<your-clerk-frontend-api>` (from Clerk dashboard) |
    | `CLERK_WEBHOOK_SECRET` | from the Clerk webhook endpoint (step 4) |
    | `CORS_ORIGINS` | your Vercel production URL |
@@ -41,17 +41,33 @@ is an account/dashboard action only the project owner can do.
 1. Create a bucket (e.g. `datapilot-prod`). Keep it **private** — all
    downloads stream through the API, nothing is served from the bucket directly.
 2. Create an R2 API token with object read/write on that bucket.
-3. Fill the `R2_*` variables on both Railway services. `config.py` is already
-   R2-shaped (endpoint derived from the account id); MinIO is dev-only.
+3. Fill the `R2_*` variables on both Railway services. `R2_ENDPOINT_URL` is
+   `https://<account-id>.r2.cloudflarestorage.com` (`config.py` reads the
+   endpoint directly; there is no `R2_ACCOUNT_ID` setting). MinIO is dev-only.
 
 ## 3. Vercel (frontend)
 
+The Vercel project builds only the static frontend: `vercel.json` publishes
+`apps/web/dist`, rewrites every path to `index.html`, and declares no
+serverless functions. Nothing on Vercel runs the API, so a backend variable
+such as `ANTHROPIC_API_KEY` set on the Vercel project is never read — it
+belongs on the API host (step 1). Until the API is hosted and wired up, the
+live site shows a "backend not connected" notice and every upload or
+analysis stops with a message naming the origin it tried.
+
 1. Project env vars (Production):
-   - `VITE_API_URL` = the Railway api service's public URL
-   - `VITE_CLERK_PUBLISHABLE_KEY` = Clerk production publishable key
-2. `vercel.json` CSP: the `connect-src` already includes a placeholder API
-   origin — replace it with the Railway api URL.
-3. Redeploy after env changes (Vercel only bakes `VITE_*` at build time).
+   - `VITE_API_URL` = the API's public **origin**, e.g.
+     `https://datapilot-api.up.railway.app` — no `/api/v1` suffix, the app
+     appends it. Unset, the app calls its own origin, which only serves HTML.
+   - `VITE_CLERK_PUBLISHABLE_KEY` = Clerk production publishable key. Required
+     once the API runs with `ENVIRONMENT=production`, which rejects every
+     request without a Clerk session token.
+2. `vercel.json` CSP: add the same API origin to `connect-src` (next to the
+   `https://api.datapilot.app` placeholder) and commit. A CSP-blocked API is
+   reported as such in the notice, so a forgotten entry is easy to spot.
+3. On the API host, set `CORS_ORIGINS` to the Vercel production URL
+   (`https://datapilot-eight.vercel.app`, plus any custom domain, comma-separated).
+4. Redeploy after env changes (Vercel only bakes `VITE_*` at build time).
 
 ## 4. Clerk (invite-only private beta)
 

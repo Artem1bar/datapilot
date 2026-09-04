@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useAppStore } from "@/stores/app-store";
 import { SessionSidebar } from "./SessionSidebar";
+import { ApiStatusBanner } from "./ApiStatusBanner";
 import { ChartPanel } from "@/components/charts/ChartPanel";
 import { ScatterPlotLauncher } from "@/components/charts/ScatterPlotLauncher";
 import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
@@ -35,6 +36,7 @@ export function ChatLayout() {
             <SessionSidebar />
           </SheetContent>
         </Sheet>
+        <ApiStatusBanner />
         <main className="flex-1 overflow-hidden">
           <Outlet />
         </main>
@@ -48,38 +50,42 @@ export function ChatLayout() {
     <div className="flex h-screen bg-[var(--surface-canvas)]">
       <SessionSidebar />
 
-      {/* Main content + right panel wrapper */}
-      <div className="relative flex flex-1 overflow-hidden">
-        {/* Chat area */}
-        <main className="flex flex-1 flex-col overflow-hidden">
-          <Outlet />
-        </main>
+      <div className="flex min-w-0 flex-1 flex-col">
+        <ApiStatusBanner />
 
-        {/* Chart panel toggle tab — only when panel is closed */}
-        {!chartPanelOpen && (
-          <button
-            type="button"
-            onClick={toggleChartPanel}
-            title="Open visualizations panel"
-            className="absolute right-0 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-l-xl border border-r-0 border-[var(--line)] bg-[var(--surface-primary)] px-2 py-3 shadow-sm transition-all duration-150 hover:bg-brand-50 hover:border-brand-200 active:scale-95"
-          >
-            <BarChart3 className="h-4 w-4 text-brand-500" />
-            {charts.length > 0 && (
-              <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white">
-                {charts.length > 9 ? "9+" : charts.length}
-              </span>
-            )}
-            <span
-              className="text-[10px] font-medium text-ink-muted"
-              style={{ writingMode: "vertical-rl", textOrientation: "mixed", transform: "rotate(180deg)" }}
+        {/* Main content + right panel wrapper */}
+        <div className="relative flex min-h-0 flex-1 overflow-hidden">
+          {/* Chat area */}
+          <main className="flex flex-1 flex-col overflow-hidden">
+            <Outlet />
+          </main>
+
+          {/* Chart panel toggle tab — only when panel is closed */}
+          {!chartPanelOpen && (
+            <button
+              type="button"
+              onClick={toggleChartPanel}
+              title="Open visualizations panel"
+              className="absolute right-0 top-1/2 z-20 flex -translate-y-1/2 flex-col items-center gap-1.5 rounded-l-xl border border-r-0 border-[var(--line)] bg-[var(--surface-primary)] px-2 py-3 shadow-sm transition-all duration-150 hover:bg-brand-50 hover:border-brand-200 active:scale-95"
             >
-              Charts
-            </span>
-          </button>
-        )}
+              <BarChart3 className="h-4 w-4 text-brand-500" />
+              {charts.length > 0 && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-brand-600 text-[10px] font-bold text-white">
+                  {charts.length > 9 ? "9+" : charts.length}
+                </span>
+              )}
+              <span
+                className="text-[10px] font-medium text-ink-muted"
+                style={{ writingMode: "vertical-rl", textOrientation: "mixed", transform: "rotate(180deg)" }}
+              >
+                Charts
+              </span>
+            </button>
+          )}
 
-        {/* Chart panel */}
-        <ChartPanel />
+          {/* Chart panel */}
+          <ChartPanel />
+        </div>
       </div>
 
       <ScatterPlotLauncher />
