@@ -2,6 +2,8 @@
 
 _Host decisions locked 2026-07-09: backend on **Railway**, storage on **Cloudflare R2**, frontend stays on **Vercel**, auth is **Clerk** (invite-only private beta)._
 
+_Status 2026-09-04: nothing is hosted. The Vercel project has been deleted and the app is self-hosted only (`docker compose`); this document is the provisioning plan, not a description of a running deployment._
+
 The code side is done: multi-stage Dockerfile (api + worker), host-agnostic
 `deploy.yml` with a Railway deploy job, prod fail-fast config guards, CORS/CSP
 wiring, structured logs. What remains is **provisioning** — every step below
@@ -51,8 +53,8 @@ The Vercel project builds only the static frontend: `vercel.json` publishes
 `apps/web/dist`, rewrites every path to `index.html`, and declares no
 serverless functions. Nothing on Vercel runs the API, so a backend variable
 such as `ANTHROPIC_API_KEY` set on the Vercel project is never read — it
-belongs on the API host (step 1). Until the API is hosted and wired up, the
-live site shows a "backend not connected" notice and every upload or
+belongs on the API host (step 1). Until the API is hosted and wired up, a
+deployed frontend shows a "backend not connected" notice and every upload or
 analysis stops with a message naming the origin it tried.
 
 1. Project env vars (Production):
@@ -66,7 +68,7 @@ analysis stops with a message naming the origin it tried.
    `https://api.datapilot.app` placeholder) and commit. A CSP-blocked API is
    reported as such in the notice, so a forgotten entry is easy to spot.
 3. On the API host, set `CORS_ORIGINS` to the Vercel production URL
-   (`https://datapilot-eight.vercel.app`, plus any custom domain, comma-separated).
+   (`https://<your-project>.vercel.app`, plus any custom domain, comma-separated).
 4. Redeploy after env changes (Vercel only bakes `VITE_*` at build time).
 
 ## 4. Clerk (invite-only private beta)

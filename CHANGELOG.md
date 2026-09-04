@@ -8,6 +8,9 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 ## [Unreleased]
 
 - Backend deployment pending (Railway + Clerk + R2 provisioning required — see `docs/DEPLOYMENT.md`).
+- No public deployment: the Vercel frontend project was deleted on 2026-09-04 and
+  the app is self-hosted only (`docker compose`). The README no longer links a
+  live URL.
 
 ### Live deployment: an honest failure until the API is hosted
 

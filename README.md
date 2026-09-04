@@ -9,13 +9,6 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 
 ![DataPilot chat UI](docs/screenshot.png)
 
-**Status:** the web app is live at the link above; the API behind it is not
-hosted yet, so on the live URL uploads and analysis stop with a "backend not
-connected" notice until `VITE_API_URL` points at a running API (see
-[Deploying](#deploying)). CI runs lint, the backend and frontend suites and
-the Playwright end-to-end flow on every push to `main`; the API image is
-built by a manual Deploy workflow.
-
 ## Features
 
 - **AI-driven cleaning** — Claude inspects your dataset, infers the schema, and proposes a structured cleaning plan (null handling, type coercion, deduplication, outlier removal, etc.)
