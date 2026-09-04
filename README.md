@@ -1,10 +1,17 @@
 # DataPilot
 
-![Tests](https://github.com/Artem1bar/datapilot/actions/workflows/test.yml/badge.svg)
+[![Tests](https://github.com/Artem1bar/datapilot/actions/workflows/test.yml/badge.svg)](https://github.com/Artem1bar/datapilot/actions/workflows/test.yml)
+![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
 An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parquet file, describe what you want in plain language, and DataPilot's AI agent inspects your data, proposes a cleaning plan, applies it, and lets you export the result.
 
 **Live:** [datapilot-eight.vercel.app](https://datapilot-eight.vercel.app)
+
+[![DataPilot chat UI](docs/screenshot.png)](https://datapilot-eight.vercel.app)
+
+**Status:** live at the link above. CI runs lint, the backend and frontend
+suites and the Playwright end-to-end flow on every push to `main`; the API
+image is built by a manual Deploy workflow.
 
 ## Features
 
@@ -87,7 +94,7 @@ cd datapilot
 pnpm install
 
 # 2. Start infrastructure
-docker-compose up -d
+docker compose up -d
 
 # 3. Configure environment
 cp .env.example .env
@@ -96,7 +103,7 @@ cp .env.example .env
 
 # 4. Install Python dependencies and run migrations
 cd apps/api
-uv sync
+uv sync --extra dev        # the dev extra adds pytest and ruff
 uv run alembic upgrade head
 
 # 5. Start the API server
@@ -107,7 +114,7 @@ cd ../..
 pnpm dev:web
 ```
 
-The app will be available at `http://localhost:5173`.
+The app will be available at `http://localhost:5174`.
 
 ### Environment Variables
 
@@ -134,12 +141,13 @@ The app will be available at `http://localhost:5173`.
 
 ## Tests
 
-**1,609 tests total** (1,379 backend + 230 frontend), plus 3 Playwright E2E specs that drive the full stack (stubbed Anthropic) in CI.
+**1,747 tests** (1,460 backend + 287 frontend) run offline with no services. 13 more backend integration tests need real Postgres and Redis (`INTEGRATION_TESTS=1`, on in CI), and 3 Playwright E2E specs drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (1,379 tests) — run from `apps/api/`
+### Backend (1,460 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
+uv sync --extra dev
 uv run pytest
 ```
 
@@ -203,7 +211,7 @@ uv run pytest
 | `test_analysis_provenance.py` | The methods record — per-operation denominators, library versions, Benjamini-Hochberg adjustment, and the rendered methods note |
 | `test_llm_cli_backend.py` | Claude CLI backend: harness-strip flags, API-key env stripping, stdin prompts, timeout/exit failures, message flattening, JSON extraction and retry, `LLM_BACKEND` dispatch, production guard |
 
-### Frontend (230 tests) — run from `apps/web/`
+### Frontend (287 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
@@ -265,3 +273,7 @@ Boots the full stack (dedicated Postgres DB, Redis db 1, stubbed Anthropic API) 
 | `POST /datasets/{id}/compare/{other_id}` | Compare two dataset versions |
 | `POST /datasets/{id}/chat` | Send a chat message for AI analysis |
 | `GET /datasets/{id}/sessions` | List chat sessions for a dataset |
+
+## License
+
+MIT — see [LICENSE](LICENSE). Developed with Claude Code as the coding agent.
