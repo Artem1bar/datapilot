@@ -5,9 +5,9 @@
 
 An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parquet file, describe what you want in plain language, and DataPilot's AI agent inspects your data, proposes a cleaning plan, applies it, and lets you export the result.
 
-**Live:** [datapilot-eight.vercel.app](https://datapilot-eight.vercel.app)
+**Status:** runs locally with docker compose; not hosted publicly yet.
 
-[![DataPilot chat UI](docs/screenshot.png)](https://datapilot-eight.vercel.app)
+![DataPilot chat UI](docs/screenshot.png)
 
 **Status:** the web app is live at the link above; the API behind it is not
 hosted yet, so on the live URL uploads and analysis stop with a "backend not
