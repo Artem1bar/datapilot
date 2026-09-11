@@ -29,6 +29,9 @@ An AI-powered data cleaning and analysis platform. Upload a CSV, Excel, or Parqu
 - **Cleaned dataset library** — all processed datasets are stored and can be re-downloaded at any time
 - **Export** — download cleaned files as CSV, Excel, or Parquet
 - **Live progress** — polled job updates so you see cleaning progress as it happens
+- **Outlier detection** — IQR and z-score policies with configurable thresholds per column; outliers are surfaced in the dataset profile and can be capped, removed, or flagged as a cleaning step
+- **Cleaning catalog** — typed operation library with parameter specs and validation; every cleaning step is checked against the catalog before execution so invalid parameter combinations are caught before they reach the pipeline
+- **Plan review with blocking validation** — the cleaning plan card shows inline step editors; required parameters that are missing block Apply and name exactly what is needed
 
 ## Architecture
 
@@ -137,9 +140,9 @@ The app will be available at `http://localhost:5174`.
 
 ## Tests
 
-**1,747 tests** (1,460 backend + 287 frontend) run offline with no services. 13 more backend integration tests need real Postgres and Redis (`INTEGRATION_TESTS=1`, on in CI), and 3 Playwright E2E specs drive the full stack (stubbed Anthropic) in CI.
+**1,964 tests** (1,560 backend + 404 frontend) run offline with no services. 13 more backend integration tests need real Postgres and Redis (`INTEGRATION_TESTS=1`, on in CI), and 3 Playwright E2E specs drive the full stack (stubbed Anthropic) in CI.
 
-### Backend (1,460 tests) — run from `apps/api/`
+### Backend (1,560 tests) — run from `apps/api/`
 
 ```bash
 cd apps/api
@@ -206,8 +209,15 @@ uv run pytest
 | `test_analysis_stats.py` | Effect sizes, intervals, and assumption checks under degenerate input — zero variance, n < 2, proportions at 0 or 1; non-finite statistics must serialize as null, never NaN |
 | `test_analysis_provenance.py` | The methods record — per-operation denominators, library versions, Benjamini-Hochberg adjustment, and the rendered methods note |
 | `test_llm_cli_backend.py` | Claude CLI backend: harness-strip flags, API-key env stripping, stdin prompts, timeout/exit failures, message flattening, JSON extraction and retry, `LLM_BACKEND` dispatch, production guard |
+| `test_outlier_detection.py` / `test_outlier_policy.py` / `test_outlier_thresholds.py` | Outlier detection service — IQR and z-score policies, threshold boundary conditions, policy configuration |
+| `test_cleaning_catalog.py` | Cleaning catalog — operation specs, parameter validation, required-field checks |
+| `test_plan_review_endpoints.py` | Plan review HTTP endpoints — validation before execution, blocking on bad steps |
+| `test_datasets_preview_outliers.py` | Outlier surfacing in dataset profile and preview |
+| `test_manipulation_repreview.py` | Re-preview after column operations |
+| `test_analysis_codegen.py` (extended) | Code export correctness for quantile regression and new analysis tiers |
+| `test_analysis_survey_quantile.py` | Survey estimation with quantile support |
 
-### Frontend (287 tests) — run from `apps/web/`
+### Frontend (404 tests) — run from `apps/web/`
 
 ```bash
 cd apps/web
