@@ -18,6 +18,7 @@ from app.models.dataset import Dataset
 from app.models.job import Job
 from app.schemas import CleaningStep, JobResponse, VerificationResult
 from app.schemas.settings import merge_preferences
+from app.services.outliers import OutlierPolicy
 from app.services.storage import download_file_bytes
 from app.utils.dataframe import read_dataframe, strip_legacy_csv_legend, to_sample_records
 
@@ -42,9 +43,26 @@ class GeneratePlanRequest(BaseModel):
 
 
 class ApplyCleaningRequest(BaseModel):
-    """Request body for applying a (possibly modified) cleaning plan."""
+    """Request body for applying a plan a person has reviewed.
+
+    The steps are whatever the review card sent — which is no longer
+    necessarily what the planner generated, since a person can retype params,
+    reorder steps, or add their own. They are validated here before dispatch.
+    """
 
     steps: list[CleaningStep] = Field(..., min_length=1, description="Cleaning steps to apply")
+    recipe_id: uuid.UUID | None = Field(
+        None,
+        description="Recipe this plan started from, if the user reviewed a saved recipe",
+    )
+
+
+class ValidatePlanRequest(BaseModel):
+    """Request body for checking an edited plan without applying it."""
+
+    steps: list[CleaningStep] = Field(
+        default_factory=list, description="Cleaning steps to check"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -84,9 +102,72 @@ async def _get_dataset_or_404(
     return dataset
 
 
+def _plan_issues(steps: list[dict[str, Any]], dataset: Dataset) -> list[dict[str, Any]]:
+    """Validate steps against this dataset, as JSON the review card can render.
+
+    Steps used to reach the executor straight from the planner, which validated
+    its own output. A person editing the plan is a second author whose work has
+    not been checked, so the same validator runs on the way in.
+    """
+    from app.services.cleaning import supported_operations
+    from app.services.plan_validator import validate_plan
+
+    columns = list((dataset.profile_json or {}).get("columns") or {})
+    return [
+        {"stepIndex": issue.step_index, "field": issue.field, "message": issue.message}
+        for issue in validate_plan(steps, supported_operations(), columns)
+    ]
+
+
+def _require_profiled(dataset: Dataset) -> None:
+    """A plan can only be checked against a dataset whose columns are known."""
+    if dataset.status != "ready" or not dataset.profile_json:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Dataset must be profiled before a cleaning plan can be checked. "
+            f"Current status: '{dataset.status}'",
+        )
+
+
 # ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
+
+
+@router.get("/operations", status_code=status.HTTP_200_OK)
+async def list_operations() -> dict[str, Any]:
+    """Every cleaning operation, with the params each one takes.
+
+    The review card renders its editor from this: a labelled field per param,
+    typed, with the enum choices the executor actually implements. Static and
+    dataset-independent, so the editor can hold it for the session.
+    """
+    from app.services.cleaning_catalog import catalog_payload
+
+    return catalog_payload()
+
+
+@router.post("/{dataset_id}/plan/validate", status_code=status.HTTP_200_OK)
+async def validate_cleaning_plan(
+    dataset_id: uuid.UUID,
+    body: ValidatePlanRequest,
+    user: CurrentUser,
+    db: DBSession,
+) -> dict[str, Any]:
+    """Check an edited plan against this dataset without applying it.
+
+    No AI call and no file read — the review card calls this as the user types,
+    so a mistyped column name is named while they are still looking at it
+    rather than at dispatch.
+    """
+    dataset = await _get_dataset_or_404(dataset_id, user.id, db)
+    _require_profiled(dataset)
+
+    steps_dicts = [step.model_dump() for step in body.steps]
+    issues = _plan_issues(steps_dicts, dataset)
+    # An empty plan is well-formed but there is nothing to approve, and apply
+    # rejects it — say so here rather than letting the button look enabled.
+    return {"valid": bool(steps_dicts) and not issues, "issues": issues}
 
 
 @router.post("/{dataset_id}/plan", status_code=status.HTTP_200_OK)
@@ -257,6 +338,27 @@ async def apply_cleaning_plan(
     # Serialize steps for the Celery task
     steps_dicts = [step.model_dump() for step in body.steps]
 
+    # These steps came through a human editor, so they are unvalidated input.
+    # Refusing here names the offending step; letting it through would run a
+    # step that silently does nothing and still report a successful clean.
+    _require_profiled(dataset)
+    issues = _plan_issues(steps_dicts, dataset)
+    if issues:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "message": "This plan cannot be applied to the dataset.",
+                "issues": [issue["message"] for issue in issues],
+                "steps": issues,
+            },
+        )
+
+    input_json: dict[str, Any] = {"steps": steps_dicts}
+    if body.recipe_id is not None:
+        # An edited recipe applies through this endpoint rather than
+        # /recipes/{id}/apply, so the job keeps the link to its recipe.
+        input_json["recipe_id"] = str(body.recipe_id)
+
     # Create a job record
     job = Job(
         id=uuid.uuid4(),
@@ -265,7 +367,7 @@ async def apply_cleaning_plan(
         type="clean",
         status="pending",
         progress=0,
-        input_json={"steps": steps_dicts},
+        input_json=input_json,
     )
     db.add(job)
     await db.commit()
@@ -275,7 +377,12 @@ async def apply_cleaning_plan(
     try:
         from app.tasks.cleaning_task import clean_dataset
 
-        task = clean_dataset.delay(str(dataset.id), str(job.id), json.dumps(steps_dicts))
+        task = clean_dataset.delay(
+            str(dataset.id),
+            str(job.id),
+            json.dumps(steps_dicts),
+            json.dumps(OutlierPolicy.from_preferences(user.preferences).to_dict()),
+        )
         job.celery_task_id = task.id
         await db.commit()
         await db.refresh(job)

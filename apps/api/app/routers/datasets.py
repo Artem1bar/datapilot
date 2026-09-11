@@ -26,6 +26,7 @@ from app.schemas import (
     UploadUrlResponse,
 )
 from app.services.dataset_versions import pick_effective_r2_key
+from app.services.outliers import is_flagged_outlier
 from app.services.storage import (
     create_presigned_upload_url,
     delete_object,
@@ -375,19 +376,10 @@ async def preview_data(
             annotations: list[dict] = []
             if pd.isna(val):
                 annotations.append({"type": "null", "severity": "warning"})
-            elif col_flags.get("has_extreme_outliers") and pd.api.types.is_numeric_dtype(
-                page_df[col]
-            ):
-                numeric_val = pd.to_numeric(val, errors="coerce")
-                if numeric_val is not None and not pd.isna(numeric_val):
-                    q75 = (
-                        (dataset.profile_json or {})
-                        .get("columns", {})
-                        .get(col, {})
-                        .get("q75", float("inf"))
-                    )
-                    if numeric_val > q75 * 3:
-                        annotations.append({"type": "outlier", "severity": "error"})
+            elif col_flags.get("has_extreme_outliers") and is_flagged_outlier(val, col_flags):
+                # Reuses the fences the profiler recorded, so the cells shown as
+                # errors are exactly the values detection flagged.
+                annotations.append({"type": "outlier", "severity": "error"})
             if annotations:
                 cell_annotations[f"{row_idx}:{col}"] = annotations
 

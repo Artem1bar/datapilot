@@ -22,7 +22,7 @@ async function sendMessage(page: Page, text: string) {
   await input.press("Enter");
 }
 
-test("golden path: upload → plan → toggle → apply → validate → results → compare → recipe", async ({
+test("golden path: upload → plan → edit → apply → validate → results → compare → recipe review", async ({
   page,
 }) => {
   await page.goto("/");
@@ -42,6 +42,20 @@ test("golden path: upload → plan → toggle → apply → validate → results
   await expect(page.getByText("1 of 2 selected")).toBeVisible();
   await expect(page.getByRole("button", { name: "Apply 1 step" })).toBeVisible();
   await page.getByRole("button", { name: /include this step/i }).click();
+  await expect(page.getByText("2 of 2 selected")).toBeVisible();
+
+  // ── Editing: open a step, retarget it, and confirm the change is marked ──
+  await page.getByRole("button", { name: /edit step 1 settings/i }).click();
+  const columnField = page.getByLabel(/target column/i);
+  await expect(columnField).toBeVisible();
+  const originalColumn = await columnField.inputValue();
+  await columnField.selectOption({ index: 2 });
+  await expect(columnField).not.toHaveValue(originalColumn);
+  await expect(page.getByText("edited")).toBeVisible();
+
+  // Reset puts the plan back to what was proposed.
+  await page.getByRole("button", { name: /^Reset$/ }).click();
+  await expect(page.getByText("edited")).toBeHidden();
   await expect(page.getByText("2 of 2 selected")).toBeVisible();
 
   // ── Apply ──
@@ -70,6 +84,15 @@ test("golden path: upload → plan → toggle → apply → validate → results
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("E2E recipe")).toBeVisible({ timeout: 30_000 });
   await dialog.getByRole("button", { name: "Apply" }).first().click();
+
+  // The recipe opens for review rather than running: it was written against a
+  // different file, so a person confirms it still fits this one.
+  await expect(page.getByText("Recipe: E2E recipe")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/written against another dataset/i)).toBeVisible();
+  await page
+    .getByRole("button", { name: /^Apply \d+ steps?$/ })
+    .last()
+    .click();
   await expect(page.getByText("Cleaning Complete", { exact: true }).nth(1)).toBeVisible({ timeout: 90_000 });
 
   // ── Revert the recipe run ──

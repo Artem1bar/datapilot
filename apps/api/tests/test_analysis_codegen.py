@@ -870,6 +870,40 @@ CASES: tuple[Case, ...] = (
         frame="models",
     ),
     Case(
+        "weighted_quantile",
+        one("weighted_quantile", {"column": "revenue", "weights": "weight"}),
+        stats_map=(
+            ("n", "n"),
+            ("quantile", "quantile"),
+            ("weighted_quantile", "weighted_quantile"),
+            ("unweighted_quantile", "unweighted_quantile"),
+            ("standard_error", "standard_error"),
+            ("ci95_low", "confidence_interval.low"),
+            ("ci95_high", "confidence_interval.high"),
+            ("relative_standard_error", "relative_standard_error"),
+            ("sum_of_weights", "sum_of_weights"),
+            ("degrees_of_freedom", "degrees_of_freedom"),
+            ("effect_size", "effect_size.value"),
+        ),
+        r_contains=("svyquantile(~y_", 'qrule = "hf1"', 'interval.type = "Woodruff"'),
+        frame="models",
+    ),
+    Case(
+        "weighted_quantile_grouped_quartile",
+        one(
+            "weighted_quantile",
+            {
+                "column": "revenue",
+                "weights": "weight",
+                "quantile": 0.25,
+                "group_by": ["segment"],
+            },
+        ),
+        stats_map=(("n", "n"), ("quantile", "quantile")),
+        r_contains=("svyby(~y_, ~g_", "svyquantile"),
+        frame="models",
+    ),
+    Case(
         "weighted_mean_grouped_stratified_clustered",
         one(
             "weighted_mean",

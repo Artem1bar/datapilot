@@ -87,6 +87,7 @@ from app.services.analysis_survey_variance import (
     sample_size_check,
     small_domain_notes,
     weighted_mean,
+    weighted_quantile,
     weighted_total,
 )
 
@@ -138,6 +139,16 @@ def _group_column(group_by: list[str] | None) -> str:
     return " / ".join(group_by) if group_by else "measure"
 
 
+# What each estimate's unweighted companion is called. Every weighted figure
+# reports one beside it, and the name has to match the statistic — an
+# "unweighted_sum" next to a median would be a lie about what was computed.
+_UNWEIGHTED_KEY = {
+    "weighted_mean": "unweighted_mean",
+    "weighted_total": "unweighted_sum",
+    "weighted_quantile": "unweighted_quantile",
+}
+
+
 def _estimate_row(label: str, estimate: Estimate, *, value_key: str) -> dict[str, Any]:
     """One row of an estimate table, with the estimate at index 1.
 
@@ -145,7 +156,7 @@ def _estimate_row(label: str, estimate: Estimate, *, value_key: str) -> dict[str
     second column, so a sample size there would put group sizes under a title
     promising weighted means.
     """
-    unweighted_key = "unweighted_mean" if value_key == "weighted_mean" else "unweighted_sum"
+    unweighted_key = _UNWEIGHTED_KEY[value_key]
     return {
         "label": label,
         value_key: estimate.value,
@@ -227,7 +238,7 @@ def _grouped_estimates(
 
 
 def _scalar_keys(estimate: Estimate, *, value_key: str, of: str) -> dict[str, Any]:
-    unweighted_key = "unweighted_mean" if value_key == "weighted_mean" else "unweighted_sum"
+    unweighted_key = _UNWEIGHTED_KEY[value_key]
     return {
         value_key: estimate.value,
         unweighted_key: estimate.unweighted,
@@ -272,6 +283,85 @@ def op_weighted_mean(df: pd.DataFrame, params: dict[str, Any], label: str) -> Op
         n=len(data.frame),
         payload=payload,
         extra_notes=small_domain_notes(counts, weights),
+        extra_checks=(sample_size_check(counts),),
+    )
+
+
+DEFAULT_QUANTILE = 0.5
+
+# Names a reader recognises, so the output says "median" rather than "the 0.5
+# quantile" for the case that is almost always the one being asked for.
+_QUANTILE_NAMES = {0.25: "first quartile", 0.5: "median", 0.75: "third quartile"}
+
+_WOODRUFF_NOTE = (
+    "The interval is Woodruff's: the confidence interval for the weighted CDF at "
+    "the estimate, read back through the CDF. It is not symmetric about the "
+    "estimate, so it will not reproduce as value plus or minus the standard error "
+    "— for a quantile the interval is computed first and the standard error is "
+    "derived from its width. Both endpoints are values that occur in the data."
+)
+
+
+def _quantile_name(p: float) -> str:
+    return _QUANTILE_NAMES.get(p, f"{p:g} quantile")
+
+
+def op_weighted_quantile(df: pd.DataFrame, params: dict[str, Any], label: str) -> OperationResult:
+    """The population median (or any quantile), which the mean cannot stand in for.
+
+    On skewed data — income, spend, wait times — the mean and the median answer
+    different questions, and a weighted survey has no correct route to the
+    median other than the weighted CDF. Taking ``median`` from an unweighted
+    aggregate would silently discard the design.
+    """
+    column = params["column"]
+    group_by = params.get("group_by")
+    p = float(params.get("quantile", DEFAULT_QUANTILE))
+    data = prepare_survey_data(
+        df, params, numeric_columns=(column,), label_columns=tuple(group_by or ())
+    )
+    values = data.frame[column].to_numpy(dtype=float)
+
+    estimates: dict[str, Estimate] = {}
+    rows: list[dict[str, Any]] = []
+    for name, indicator in _domains(data.frame, group_by):
+        estimate = weighted_quantile(data.design, values, p, indicator)
+        estimates[name] = estimate
+        rows.append(_estimate_row(name, estimate, value_key="weighted_quantile"))
+    frame = pd.DataFrame(rows).rename(columns={"label": _group_column(group_by)})
+
+    counts = {name: estimate.n for name, estimate in estimates.items()}
+    weights = {name: estimate.sum_weights for name, estimate in estimates.items()}
+
+    payload: dict[str, Any] = {
+        "estimate": (
+            f"Weighted {_quantile_name(p)} (quantile {p:g}) of {column}, using "
+            f"{params['weights']} as the design weight"
+        ),
+        "quantile": p,
+        "n": len(data.frame),
+        **_design_payload(data, values),
+    }
+    if group_by:
+        payload["grouped_by"] = list(group_by)
+        payload["groups"] = len(estimates)
+    else:
+        payload.update(
+            _scalar_keys(
+                estimates["(all respondents)"],
+                value_key="weighted_quantile",
+                of=f"the population {_quantile_name(p)} of {column}",
+            )
+        )
+
+    return _finish(
+        frame,
+        data,
+        op="weighted_quantile",
+        label=label,
+        n=len(data.frame),
+        payload=payload,
+        extra_notes=[_WOODRUFF_NOTE, *small_domain_notes(counts, weights)],
         extra_checks=(sample_size_check(counts),),
     )
 
@@ -729,6 +819,26 @@ SURVEY_OPERATION_DEFS: dict[str, OperationDef] = {
         requires=_DESIGN_RULES + " Each group of a 'group_by' is estimated as a domain.",
         check=_check_design_params,
     ),
+    "weighted_quantile": OperationDef(
+        6,
+        "The population median — or any quantile — a weighted survey estimates, with a "
+        "Woodruff confidence interval, and the unweighted quantile beside it. Use this "
+        "for a median, a quartile or a percentile of weighted data: an ordinary median "
+        "ignores the weights entirely and is simply wrong. On skewed data (income, "
+        "spend, wait times) prefer it over weighted_mean.",
+        (
+            Param("column", "numeric", required=True),
+            Param("weights", "numeric", required=True),
+            Param("quantile", "proportion"),
+            Param("group_by", "columns"),
+            *_DESIGN_PARAMS,
+        ),
+        requires=_DESIGN_RULES + " 'quantile' is strictly between 0 and 1 and defaults to "
+        "0.5 (the median); 0.25 and 0.75 are the quartiles. Each group of a 'group_by' is "
+        "estimated as a domain. The interval is Woodruff's and is not symmetric about the "
+        "estimate.",
+        check=_check_design_params,
+    ),
     "weighted_total": OperationDef(
         6,
         "The population total a weighted survey estimates, with a design-based standard "
@@ -791,6 +901,7 @@ SURVEY_OPERATION_DEFS: dict[str, OperationDef] = {
 
 SURVEY_OPERATIONS = {
     "weighted_mean": op_weighted_mean,
+    "weighted_quantile": op_weighted_quantile,
     "weighted_total": op_weighted_total,
     "weighted_crosstab": op_weighted_crosstab,
     "design_effect": op_design_effect,

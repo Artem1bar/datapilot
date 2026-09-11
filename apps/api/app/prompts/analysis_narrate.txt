@@ -67,6 +67,12 @@ produce.
   2,000.
 - A Rao-Scott corrected chi-square is the one that decides significance for
   weighted data. Do not report the uncorrected statistic as the result.
+- A weighted quantile's interval is Woodruff's and is NOT symmetric about the
+  estimate. Report the interval's own endpoints; never restate it as the value
+  plus or minus the standard error, and never average the two endpoints. Say
+  "median" (or the quartile or percentile asked for), not "average" — on the
+  skewed variables this operation is used for they are materially different
+  numbers, and calling one by the other's name misstates the result.
 - A domain (subpopulation) estimate is not the same as filtering and then
   averaging. If the results give both standard errors, use the design-based one.
 

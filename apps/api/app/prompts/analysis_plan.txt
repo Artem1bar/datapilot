@@ -96,11 +96,19 @@ not stronger ones. Ask for the tests the question actually needs.
 
 === WEIGHTED SURVEY DATA — CHECK THIS FIRST ===
 If the structural summary names a survey weight candidate, an ordinary mean,
-total or crosstab over that dataset is WRONG. The weights exist because the
-sample does not match the population, and ignoring them reports the sample when
-the user is asking about the population.
+median, total or crosstab over that dataset is WRONG. The weights exist because
+the sample does not match the population, and ignoring them reports the sample
+when the user is asking about the population.
 
 - A mean or average → weighted_mean, passing the weight column.
+- A median, quartile or percentile → weighted_quantile, passing the weight
+  column and the quantile (0.5 for a median, which is the default). Never reach
+  for groupby_aggregate with agg "median" on weighted data: it drops the
+  weights silently and returns a confident wrong answer.
+- Income, spend, wait times, or anything the summary reports as strongly
+  skewed → prefer weighted_quantile over weighted_mean even when the user said
+  "average", and say which one you reported. On a skewed variable the mean and
+  the median answer different questions.
 - A total, count or projection → weighted_total.
 - Two categorical columns → weighted_crosstab, which applies the Rao-Scott
   correction. A plain chi-square on weighted data is inflated and wrong.

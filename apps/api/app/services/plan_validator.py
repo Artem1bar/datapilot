@@ -11,25 +11,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from app.services.cleaning_catalog import (
+    column_optional_operations,
+    enum_choices,
+    required_param_types,
+    requires_one_of,
+)
+
+# Both tables come from the operation catalogue, so the fields the review card
+# offers a person and the fields this validator insists on cannot drift apart.
 # Operations that legitimately run without a target column.
-COLUMN_OPTIONAL_OPS = {
-    "clean_column_names",
-    "drop_empty_columns",
-    "drop_incomplete_responses",
-    "drop_rows",
-    "deduplicate",
-}
+COLUMN_OPTIONAL_OPS = column_optional_operations()
 
 # Required params (name, expected type) per operation.
-_REQUIRED_PARAMS: dict[str, tuple[tuple[str, type | tuple[type, ...]], ...]] = {
-    "drop_rows": (("indices", list),),
-    "cap_extreme_values": (("max_value", (int, float)),),
-    "flag_contextual_fraud": (("threshold", (int, float)),),
-    "rename_column": (("new_name", str),),
-    "standardize_values": (("mapping", dict),),
-}
+_REQUIRED_PARAMS: dict[str, tuple[tuple[str, type | tuple[type, ...]], ...]] = (
+    required_param_types()
+)
 
-_CAST_TARGETS = {"int", "float", "datetime", "str"}
+# Params where one of a group must be supplied, e.g. fill_null's strategy/value.
+_REQUIRED_ONE_OF: dict[str, tuple[tuple[str, ...], ...]] = requires_one_of()
+
+_CAST_TARGETS = set(enum_choices("cast_type", "target_type"))
 
 
 @dataclass(frozen=True)
@@ -152,18 +154,16 @@ def validate_plan(
                     )
                 )
 
-        if (
-            operation == "fill_null"
-            and params.get("strategy") is None
-            and params.get("value") is None
-        ):
-            issues.append(
-                PlanIssue(
-                    i,
-                    "params",
-                    "fill_null requires either 'strategy' or 'value'",
+        for group in _REQUIRED_ONE_OF.get(operation, ()):
+            if all(params.get(name) is None for name in group):
+                choices = " or ".join(f"'{name}'" for name in group)
+                issues.append(
+                    PlanIssue(
+                        i,
+                        "params",
+                        f"{operation} requires either {choices}",
+                    )
                 )
-            )
 
         # Steps may reference columns created by earlier steps.
         if operation == "rename_column" and isinstance(params.get("new_name"), str):

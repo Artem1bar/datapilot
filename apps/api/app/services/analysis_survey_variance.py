@@ -109,6 +109,43 @@ proportion, restores an approximate :math:`\\chi^2_{(r-1)(c-1)}` reference
 distribution. Under equal weights every :math:`\\hat d` is 1 and the numerator
 is exactly :math:`(r-1)(c-1)`, so :math:`\\hat\\delta = 1` and nothing is
 corrected.
+
+**9. Weighted quantiles, and Woodruff's interval.** The weighted distribution
+function is
+
+.. math::
+
+    \\hat F(x) = \\frac{\\sum_i w_i\\,\\mathbb{1}[y_i \\le x]}{\\sum_i w_i},
+
+and the *p*-th quantile is its lower inverse, :math:`\\hat Q(p) = \\inf\\{x :
+\\hat F(x) \\ge p\\}` — the smallest observed value whose weighted CDF reaches
+*p*. It is always a value that occurs in the data.
+
+A quantile is not a smooth function of estimated totals, so (1) cannot be
+applied to it directly and none of the linearizations above give its variance.
+Woodruff (1952) instead builds the interval on a quantity that *is* covered by
+the machinery above. At the estimate, the indicator :math:`u_i = \\mathbb{1}
+[y_i \\le \\hat Q(p)]` has weighted mean :math:`\\hat F(\\hat Q(p))`, which is
+an ordinary ratio estimator with variance from (3). Taking its confidence
+interval on the probability scale,
+
+.. math::
+
+    \\left[p - t_{df,\\,0.975}\\,\\hat{SE}(\\hat F),\\;
+           p + t_{df,\\,0.975}\\,\\hat{SE}(\\hat F)\\right]
+    \\;\\cap\\; (0, 1]
+
+and reading both endpoints back through :math:`\\hat Q` gives the interval for
+the quantile. This is the default method in R's ``survey::svyquantile`` and is
+not an approximation invented here.
+
+Two consequences worth knowing when reading the output. The interval is **not
+symmetric** about the estimate — it inherits the shape of the distribution, so
+``value ± SE`` will not reproduce it. And because the endpoints are themselves
+observed values, the reported standard error is derived *from* the interval,
+:math:`\\hat{SE}(\\hat Q) = (\\hat Q_{\\text{high}} - \\hat Q_{\\text{low}}) /
+(2 t_{df,\\,0.975})`, rather than the interval being derived from the standard
+error as it is everywhere else in this module.
 """
 
 from __future__ import annotations
@@ -363,6 +400,63 @@ def weighted_total(
         sum_weights=float(weights.sum()),
         unweighted=float(np.sum(values[inside])) if inside.any() else math.nan,
     )
+
+
+#: The lowest probability the CDF is ever inverted at. A Woodruff endpoint that
+#: falls at or below zero means the interval reaches the bottom of the observed
+#: distribution; inverting at a positive infinitesimal returns exactly that.
+_CDF_FLOOR = 1e-12
+
+
+def inverse_cdf(values: np.ndarray, weights: np.ndarray, p: float) -> float:
+    """Formula (9): the smallest value whose weighted CDF reaches *p*."""
+    order = np.argsort(values, kind="stable")
+    ordered = values[order]
+    cumulative = np.cumsum(weights[order])
+    target = p * float(cumulative[-1])
+    index = int(np.searchsorted(cumulative, target, side="left"))
+    return float(ordered[min(index, ordered.size - 1)])
+
+
+def weighted_quantile(
+    design: SurveyDesign, values: np.ndarray, p: float, domain: np.ndarray | None = None
+) -> Estimate:
+    """Formula (9): a weighted quantile, with a Woodruff confidence interval.
+
+    Unlike every other estimate here the interval is not ``value ± t·SE``: it is
+    computed first, by inverting the interval for the CDF at the estimate, and
+    the standard error is read back off its width. That is what makes it valid
+    for a statistic that is a step function of the data rather than a smooth
+    function of totals.
+    """
+    indicator = _domain(design, domain)
+    inside = indicator > 0
+    weights = design.weights * indicator
+    total_weight = float(weights.sum())
+    if total_weight <= 0:
+        raise ExecutionError("no positive weights remain for this estimate")
+
+    inside_values = values[inside]
+    inside_weights = design.weights[inside]
+    quantile = inverse_cdf(inside_values, inside_weights, p)
+    unweighted = float(np.quantile(inside_values, p, method="inverted_cdf"))
+
+    # The indicator's weighted mean is the CDF at the estimate — a ratio
+    # estimator, so its variance comes from (3) like any other weighted mean.
+    below = (values <= quantile).astype(float)
+    achieved = weighted_mean(design, below, domain)
+
+    dof = design.dof
+    n = int(inside.sum())
+    t_value = float(stats.t.ppf(1 - (1 - CONFIDENCE_LEVEL) / 2, dof)) if dof > 0 else math.nan
+    if not math.isfinite(t_value) or not math.isfinite(achieved.standard_error):
+        return Estimate(quantile, math.nan, math.nan, math.nan, dof, n, total_weight, unweighted)
+
+    margin = t_value * achieved.standard_error
+    ci_low = inverse_cdf(inside_values, inside_weights, min(max(p - margin, _CDF_FLOOR), 1.0))
+    ci_high = inverse_cdf(inside_values, inside_weights, min(max(p + margin, _CDF_FLOOR), 1.0))
+    standard_error = (ci_high - ci_low) / (2 * t_value) if t_value > 0 else math.nan
+    return Estimate(quantile, standard_error, ci_low, ci_high, dof, n, total_weight, unweighted)
 
 
 def srs_mean_variance(

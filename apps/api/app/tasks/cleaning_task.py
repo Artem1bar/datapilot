@@ -169,14 +169,23 @@ def _remediation_stalled(
 
 
 @celery_app.task(bind=True, name="clean_dataset", max_retries=2)
-def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
-    """Download a dataset, apply cleaning steps, and upload the cleaned result."""
+def clean_dataset(
+    self, dataset_id: str, job_id: str, steps_json: str, policy_json: str | None = None
+) -> dict:
+    """Download a dataset, apply cleaning steps, and upload the cleaned result.
+
+    *policy_json* carries the user's outlier settings across the queue boundary.
+    It stays optional so tasks enqueued before this argument existed still run,
+    falling back to the documented defaults.
+    """
     from sqlalchemy.orm import Session
 
     from app.models.dataset import Dataset
     from app.models.job import Job
+    from app.services.outliers import OutlierPolicy
 
     engine = _get_sync_engine()
+    policy = OutlierPolicy.from_preferences(json.loads(policy_json) if policy_json else {})
 
     try:
         _publish_progress_sync(job_id, "running", 5, "Starting cleaning task")
@@ -228,7 +237,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
         # Execute cleaning plan
         from app.services.cleaning import execute_cleaning_plan
 
-        df, audit_log, failed_steps = execute_cleaning_plan(df, steps)
+        df, audit_log, failed_steps = execute_cleaning_plan(df, steps, policy=policy)
 
         if failed_steps:
             logger.warning(
@@ -269,6 +278,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                 audit_log=audit_log,
                 original_quality_flags=original_quality_flags,
                 failed_steps=failed_steps,
+                policy=policy,
             )
 
             verification_data = verification_report.to_dict()
@@ -400,7 +410,9 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
 
                 from app.services.cleaning import execute_cleaning_plan
 
-                df, extra_audit, extra_failed = execute_cleaning_plan(df, remediation_steps)
+                df, extra_audit, extra_failed = execute_cleaning_plan(
+                    df, remediation_steps, policy=policy
+                )
                 audit_log = audit_log + extra_audit
                 all_remediation_steps.extend(remediation_steps)
                 if extra_failed:
@@ -441,6 +453,7 @@ def clean_dataset(self, dataset_id: str, job_id: str, steps_json: str) -> dict:
                     audit_log=audit_log,
                     original_quality_flags=original_quality_flags,
                     failed_steps=failed_steps,
+                    policy=policy,
                 )
                 verification_data = verification_report.to_dict()
                 verification_data.pop("flags_before", None)

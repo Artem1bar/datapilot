@@ -76,6 +76,13 @@ export interface CleaningPlanPayload {
   /** Set once the plan has been applied, so the card stays "Applied" across
    *  remounts (e.g. switching sessions away and back) instead of re-enabling. */
   readonly applied?: boolean;
+  /** The dataset's real column names, so the review card's column pickers offer
+   *  what exists rather than free text a user can mistype. */
+  readonly columns?: readonly string[];
+  /** Set when the plan under review came from a saved recipe rather than the
+   *  planner — the applied job keeps the link back to it. */
+  readonly recipeId?: string;
+  readonly recipeName?: string;
 }
 
 export interface CleaningProgressPayload {
@@ -162,6 +169,10 @@ export interface ReportPreviewPayload {
 export interface ManipulationPreviewPayload {
   readonly type: "manipulation_preview";
   readonly command: string;
+  /** Needed to re-preview a narrowed selection of operations. */
+  readonly datasetId?: string;
+  /** Set once applied, so the card stays applied across remounts. */
+  readonly applied?: boolean;
   readonly operations: ReadonlyArray<{
     readonly opType: string;
     readonly params: Record<string, unknown>;

@@ -11,6 +11,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.services.outliers import DEFAULT_THRESHOLD as OUTLIER_DEFAULT_THRESHOLD
+
 
 class UserPreferences(BaseModel):
     """A user's cleaning/AI preferences. Every field has a safe default."""
@@ -19,8 +21,12 @@ class UserPreferences(BaseModel):
 
     # Cleaning behaviour
     cleaning_aggressiveness: Literal["conservative", "standard", "aggressive"] = "standard"
+    # Read against outlier_method: a modified z-score cutoff for "mad", an IQR
+    # multiplier for "iqr". The default must stay in step with
+    # app.services.outliers.DEFAULT_THRESHOLD — it said 3.5 here while the
+    # pipeline used 5.0, and nothing read either value.
     outlier_method: Literal["mad", "iqr", "none"] = "mad"
-    outlier_threshold: float = Field(3.5, ge=0.0, le=100.0)
+    outlier_threshold: float = Field(OUTLIER_DEFAULT_THRESHOLD, ge=0.0, le=100.0)
     cap_strategy: Literal["off", "auto", "manual"] = "auto"
     null_fill_default: Literal["none", "mean", "median", "mode", "zero"] = "none"
     dedup_default: bool = False

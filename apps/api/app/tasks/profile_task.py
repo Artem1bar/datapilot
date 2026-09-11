@@ -17,6 +17,7 @@ import pandas as pd
 from sqlalchemy import select, update
 from sqlalchemy.exc import NoResultFound
 
+from app.services.outliers import detection_fences
 from app.services.storage import download_file_bytes
 from app.tasks._errors import user_facing_error
 from app.tasks.celery_app import celery_app
@@ -269,23 +270,24 @@ def detect_quality_issues(df: pd.DataFrame, domain: str | None = None) -> dict:
                     col_flags["has_embedded_text"] = True
                     col_flags["embedded_text_examples"] = examples[:4]
 
-            # Extreme numeric outliers — use 15× IQR fence (forgiving), or mean+8*std when IQR=0
+            # Extreme numeric outliers in BOTH tails — a price of 1 among
+            # four-figure prices is as much an error as a 99999. The fences are
+            # recorded so the preview grid can highlight exactly what was
+            # flagged here instead of re-deriving a cruder rule of its own.
             numeric_coerced = pd.to_numeric(
                 str_vals.str.replace(r"[^\d\.\-]", "", regex=True), errors="coerce"
             ).dropna()
-            if len(numeric_coerced) >= 5:
-                q25, q75 = numeric_coerced.quantile(0.25), numeric_coerced.quantile(0.75)
-                iqr = q75 - q25
-                if iqr > 0:
-                    fence = q75 + 15 * iqr
-                else:
-                    # IQR=0 (e.g. mostly zeros): use mean + 8*std as fallback
-                    mean, std = numeric_coerced.mean(), numeric_coerced.std()
-                    fence = mean + 8 * std if std > 0 else float("inf")
-                extremes = numeric_coerced[numeric_coerced > fence]
+            fences = detection_fences(numeric_coerced)
+            if fences is not None:
+                lower_fence, upper_fence = fences
+                extremes = numeric_coerced[
+                    (numeric_coerced < lower_fence) | (numeric_coerced > upper_fence)
+                ]
                 if len(extremes) > 0:
                     col_flags["has_extreme_outliers"] = True
                     col_flags["extreme_values"] = extremes.head(3).tolist()
+                    col_flags["outlier_lower_fence"] = lower_fence
+                    col_flags["outlier_upper_fence"] = upper_fence
 
         # --- Number words apply to any column (e.g., Under18Group: "One", "Two") ---
         lower_vals = str_vals.str.lower().str.strip()

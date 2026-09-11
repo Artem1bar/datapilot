@@ -10,7 +10,7 @@ vi.mock("@/lib/settings-api");
 const DEFAULTS: UserPreferences = {
   cleaning_aggressiveness: "standard",
   outlier_method: "mad",
-  outlier_threshold: 3.5,
+  outlier_threshold: 5.0,
   cap_strategy: "auto",
   null_fill_default: "none",
   dedup_default: false,
@@ -54,5 +54,27 @@ describe("CleaningSettings", () => {
     vi.mocked(settingsApi.getSettings).mockRejectedValue(new Error("boom"));
     render(<CleaningSettings />);
     expect(await screen.findByText("boom")).toBeInTheDocument();
+  });
+
+  it("says what the outlier threshold means for the chosen method", async () => {
+    render(<CleaningSettings />);
+    expect(await screen.findByText(/MAD z-score cutoff/)).toBeInTheDocument();
+
+    vi.mocked(settingsApi.getSettings).mockResolvedValue({
+      ...DEFAULTS,
+      outlier_method: "iqr",
+    });
+    render(<CleaningSettings />);
+    expect(await screen.findByText(/IQR multiplier/)).toBeInTheDocument();
+  });
+
+  it("disables the threshold when outlier handling is turned off", async () => {
+    vi.mocked(settingsApi.getSettings).mockResolvedValue({
+      ...DEFAULTS,
+      outlier_method: "none",
+    });
+    render(<CleaningSettings />);
+    const threshold = await screen.findByDisplayValue(String(DEFAULTS.outlier_threshold));
+    expect(threshold).toBeDisabled();
   });
 });

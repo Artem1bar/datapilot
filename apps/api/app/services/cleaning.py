@@ -16,6 +16,7 @@ import pandas as pd
 from anthropic import Anthropic
 
 from app.config import settings
+from app.services.outliers import MIN_CLEANING_VALUES, OutlierPolicy
 from app.services.structured_output import coerce_confidence, request_tool_call
 
 logger = logging.getLogger(__name__)
@@ -985,50 +986,40 @@ def _sum_composite_expenses(
 
 
 def _flag_extreme_outliers(
-    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
+    audit: list[dict[str, Any]],
+    policy: OutlierPolicy | None = None,
 ) -> pd.DataFrame:
-    """Null out extreme outlier values and mark affected rows with a flag column.
+    """Null out extreme values in both tails and mark affected rows for review.
 
-    Uses a modified Z-score (MAD-based) method which is robust to the outlier
-    inflating the IQR. Values with |modified_z| > threshold are flagged.
-    Falls back to 99th-percentile cutoff when MAD is zero.
+    The cutoff comes from the user's outlier settings unless the step names its
+    own threshold. Verification re-checks the step against the same policy, so a
+    step that behaved as configured is never reported as a failure.
     """
     if column not in df.columns:
         return df
 
-    threshold = params.get(
-        "threshold", 5.0
-    )  # modified Z-score threshold — 5.0 is forgiving enough for normal spend variation
+    policy = policy or OutlierPolicy()
+    if not policy.enabled:
+        return df
+
+    threshold = policy.threshold_for(params)
     flag_col = params.get("flag_column", "_flagged")
 
     # Try to work with numeric values even if column is still object dtype
     # (e.g. after cap_extreme_values nulled some cells but before cast_type)
     if not pd.api.types.is_numeric_dtype(df[column]):
         coerced = pd.to_numeric(df[column], errors="coerce")
-        if coerced.notna().sum() < 4:
+        if coerced.notna().sum() < MIN_CLEANING_VALUES:
             return df
         df = df.copy()
         df[column] = coerced
 
-    numeric = pd.to_numeric(df[column], errors="coerce").dropna()
-    if len(numeric) < 4:
-        return df
-
-    median_val = numeric.median()
-    mad = (numeric - median_val).abs().median()
-
-    if mad == 0:
-        # Fallback: values above 99th percentile
-        upper = numeric.quantile(0.99)
-        extreme_mask = df[column].notna() & (df[column] > upper)
-    else:
-        modified_z = 0.6745 * (df[column] - median_val).abs() / mad
-        extreme_mask = modified_z > threshold
-
+    extreme_mask = policy.outlier_mask(df[column], threshold)
     if not extreme_mask.any():
         return df
-
-    upper = df.loc[extreme_mask, column].min()  # for audit message
 
     before = df[column].copy()
     df = df.copy()
@@ -1048,10 +1039,16 @@ def _flag_extreme_outliers(
             df[column],
             column,
             "flag_extreme_outliers",
-            f"Rule 4.1: Extreme outlier (≥{upper}) removed and row flagged for review",
+            f"Rule 4.1: Extreme outlier ({policy.describe(threshold)}) "
+            "removed and row flagged for review",
         )
     )
-    logger.info("Flagged %d extreme outliers in column '%s'", extreme_mask.sum(), column)
+    logger.info(
+        "Flagged %d extreme outliers in column '%s' (%s)",
+        extreme_mask.sum(),
+        column,
+        policy.describe(threshold),
+    )
     return df
 
 
@@ -1246,16 +1243,31 @@ def _standardize_values(
 
 
 def _remove_outliers(
-    df: pd.DataFrame, column: str, params: dict[str, Any], audit: list[dict[str, Any]]
+    df: pd.DataFrame,
+    column: str,
+    params: dict[str, Any],
+    audit: list[dict[str, Any]],
+    policy: OutlierPolicy | None = None,
 ) -> pd.DataFrame:
+    """Drop rows sitting outside the column's IQR fence, either side.
+
+    Row-dropping is a fence operation by nature, so it stays on IQR whichever
+    method the user picked; their threshold becomes the multiplier only when
+    they chose the IQR method. Picking "none" disables it entirely.
+    """
     if column not in df.columns or not pd.api.types.is_numeric_dtype(df[column]):
         return df
 
+    policy = policy or OutlierPolicy()
+    if not policy.enabled:
+        return df
+
+    multiplier = policy.iqr_multiplier(params)
     q1 = df[column].quantile(0.25)
     q3 = df[column].quantile(0.75)
     iqr = q3 - q1
-    lower = q1 - 3.0 * iqr
-    upper = q3 + 3.0 * iqr
+    lower = q1 - multiplier * iqr
+    upper = q3 + multiplier * iqr
     out_mask = (df[column] < lower) | (df[column] > upper)
     dropped_indices = df.index[out_mask].tolist()
     df = df[(df[column] >= lower) & (df[column] <= upper)].reset_index(drop=True)
@@ -1306,6 +1318,12 @@ _OPERATION_MAP: dict[str, Any] = {
 }
 
 
+# Operations that judge which values are extreme, and so take the user's
+# outlier settings as an extra argument. Everything else keeps the plain
+# (df, column, params, audit) signature.
+_POLICY_AWARE_OPERATIONS: frozenset[str] = frozenset({"flag_extreme_outliers", "remove_outliers"})
+
+
 def supported_operations() -> set[str]:
     """Return the set of cleaning operation names the executor can run."""
     return set(_OPERATION_MAP)
@@ -1346,10 +1364,14 @@ REMEDIATION_OPS: frozenset[str] = frozenset(
 def execute_cleaning_plan(
     df: pd.DataFrame,
     steps: list[dict[str, Any]],
+    policy: OutlierPolicy | None = None,
 ) -> tuple[pd.DataFrame, list[dict[str, Any]], list[dict[str, Any]]]:
     """Execute an ordered list of cleaning steps on a DataFrame.
 
     Each step dict must have: operation, column, params, description.
+
+    *policy* carries the user's outlier settings to the operations that judge
+    extreme values; omitting it applies the documented defaults.
 
     Returns:
         (cleaned_df, audit_log, failed_steps) where:
@@ -1389,7 +1411,10 @@ def execute_cleaning_plan(
 
         try:
             before_shape = df.shape
-            df = executor(df, column, params, audit_log)
+            if operation in _POLICY_AWARE_OPERATIONS:
+                df = executor(df, column, params, audit_log, policy=policy)
+            else:
+                df = executor(df, column, params, audit_log)
             logger.info(
                 "Step %d/%d [%s] on '%s': %s -> %s | %s",
                 i + 1,

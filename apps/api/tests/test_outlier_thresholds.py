@@ -16,6 +16,7 @@ from __future__ import annotations
 import pandas as pd
 
 from app.services.cleaning import execute_cleaning_plan
+from app.services.outliers import detection_fences
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -141,14 +142,14 @@ class TestProfileTaskOutlierFence:
     """
 
     def _compute_fence(self, values: list[float]) -> float:
-        """Replicate the exact fence logic from profile_task.py."""
-        arr = pd.Series(values)
-        q25, q75 = arr.quantile(0.25), arr.quantile(0.75)
-        iqr = q75 - q25
-        if iqr > 0:
-            return float(q75 + 15 * iqr)
-        mean, std = arr.mean(), arr.std()
-        return float(mean + 8 * std) if std > 0 else float("inf")
+        """Return the real upper fence the profiler uses.
+
+        This used to be a hand-copied replica of profile_task's logic, so the
+        test would keep passing while the implementation drifted underneath it.
+        It now calls the shared implementation both sides use.
+        """
+        fences = detection_fences(pd.Series(values))
+        return float("inf") if fences is None else fences[1]
 
     def test_fence_is_15x_not_10x(self):
         """At 15× IQR the fence is 50% further out than the old 10× fence.

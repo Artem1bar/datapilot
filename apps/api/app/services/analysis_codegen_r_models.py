@@ -1122,6 +1122,100 @@ def _emit_r_weighted_mean(params: dict[str, Any], label: str, index: int) -> Lin
     ]
 
 
+R_SURVEY_QUANTILE_ROWS = register_helper(
+    "survey_quantile_rows",
+    """survey_quantile_rows <- function(labels, estimates, errors, lows, highs, counts,
+                                 weight_sums, unweighted) {
+  # Unlike the mean and total rows, the interval here is NOT rebuilt from the
+  # standard error: Woodruff's interval is not symmetric about the estimate, so
+  # it is carried through as svyquantile computed it.
+  out <- data.frame(
+    label = labels,
+    weighted_quantile = estimates,
+    unweighted_quantile = unweighted,
+    n = counts,
+    sum_of_weights = weight_sums,
+    standard_error = errors,
+    ci95_low = lows,
+    ci95_high = highs,
+    relative_se = ifelse(estimates == 0, NA_real_, abs(errors / estimates)),
+    stringsAsFactors = FALSE
+  )
+  out
+}""",
+)
+
+
+@register("weighted_quantile", R_SURVEY_FRAME, R_SURVEY_QUANTILE_ROWS, packages=("survey",))
+def _emit_r_weighted_quantile(params: dict[str, Any], label: str, index: int) -> Lines:
+    group_by = list(params.get("group_by") or [])
+    p = float(params.get("quantile", 0.5))
+    # qrule "hf1" is the inverse-CDF quantile — the smallest observed value whose
+    # weighted CDF reaches p. survey's default ("math") interpolates instead and
+    # would not reproduce the product's number.
+    call = f'quantiles = {p}, interval.type = "Woodruff", qrule = "hf1", ci = TRUE'
+    if group_by:
+        estimate = [
+            f"by_{index} <- svyby(~y_, ~g_, design_{index}, svyquantile, {call})",
+            f"labels_{index} <- as.character(by_{index}$g_)",
+            f"estimates_{index} <- as.numeric(coef(by_{index}))",
+            f"errors_{index} <- as.numeric(SE(by_{index}))",
+            f"bounds_{index} <- confint(by_{index})",
+            f"lows_{index} <- as.numeric(bounds_{index}[, 1])",
+            f"highs_{index} <- as.numeric(bounds_{index}[, 2])",
+            f"counts_{index} <- as.numeric(table(sd_{index}$g_)[labels_{index}])",
+            f"weight_sums_{index} <- as.numeric(",
+            f"  tapply(sd_{index}$w_, sd_{index}$g_, sum)[labels_{index}]",
+            ")",
+            f"unweighted_{index} <- as.numeric(tapply(",
+            f"  sd_{index}$y_, sd_{index}$g_,",
+            f"  function(v) as.numeric(quantile(v, {p}, type = 1))",
+            f")[labels_{index}])",
+        ]
+    else:
+        estimate = [
+            f"estimate_{index} <- svyquantile(~y_, design_{index}, {call})",
+            f'labels_{index} <- "(all respondents)"',
+            f"estimates_{index} <- as.numeric(coef(estimate_{index}))",
+            f"errors_{index} <- as.numeric(SE(estimate_{index}))",
+            f"bounds_{index} <- confint(estimate_{index})",
+            f"lows_{index} <- as.numeric(bounds_{index}[, 1])",
+            f"highs_{index} <- as.numeric(bounds_{index}[, 2])",
+            f"counts_{index} <- nrow(sd_{index})",
+            f"weight_sums_{index} <- sum(sd_{index}$w_)",
+            f"unweighted_{index} <- as.numeric(quantile(sd_{index}$y_, {p}, type = 1))",
+        ]
+    return [
+        "# A median cannot be read off a weighted mean, and an ordinary median",
+        "# ignores the weights entirely. svyquantile estimates the quantile of the",
+        "# weighted distribution and inverts the CDF interval for its bounds.",
+        *_survey_frame_lines(params, index, value=params["column"], group=group_by),
+        *estimate,
+        f"result_{index} <- survey_quantile_rows(",
+        f"  labels_{index}, estimates_{index}, errors_{index}, lows_{index}, highs_{index},",
+        f"  counts_{index}, weight_sums_{index}, unweighted_{index}",
+        ")",
+        f"names(result_{index})[1] <- {r_literal(_group_column(params))}",
+        f"stats_{index} <- list(",
+        f"  n = nrow(sd_{index}),",
+        f"  quantile = {p},",
+        f"  degrees_of_freedom = dof_{index},",
+        "  # How far weighting moved the mean, in standard deviations — the same",
+        "  # effect size every operation in this tier reports.",
+        f"  effect_size = (weighted.mean(sd_{index}$y_, sd_{index}$w_)"
+        f" - mean(sd_{index}$y_)) / sd(sd_{index}$y_)",
+        ")",
+        f"if (length(labels_{index}) == 1) {{",
+        f"  stats_{index}$weighted_quantile <- estimates_{index}[1]",
+        f"  stats_{index}$unweighted_quantile <- unweighted_{index}[1]",
+        f"  stats_{index}$standard_error <- errors_{index}[1]",
+        f"  stats_{index}$ci95_low <- lows_{index}[1]",
+        f"  stats_{index}$ci95_high <- highs_{index}[1]",
+        "}",
+        f"show_result({r_literal(label)}, result_{index}, stats_{index})",
+    ]
+
+
 @register("weighted_total", R_SURVEY_FRAME, R_SURVEY_ROWS, packages=("survey",))
 def _emit_r_weighted_total(params: dict[str, Any], label: str, index: int) -> Lines:
     return [

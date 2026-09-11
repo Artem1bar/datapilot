@@ -14,6 +14,8 @@ from typing import Any
 
 import pandas as pd
 
+from app.services.outliers import MIN_CLEANING_VALUES, OutlierPolicy
+
 logger = logging.getLogger(__name__)
 
 
@@ -366,7 +368,15 @@ def _validate_flag_extreme_outliers(
     df: pd.DataFrame,
     column: str,
     params: dict[str, Any],
+    policy: OutlierPolicy | None = None,
 ) -> StepVerification:
+    """Check the step against the very cutoff the cleaner used.
+
+    This re-check used to hardcode 3.5 while the cleaner flagged at 5.0, so a
+    value in between made the cleaner correctly flag nothing and verification
+    call that a failure. Both now read one :class:`OutlierPolicy`.
+    """
+    policy = policy or OutlierPolicy()
     flag_col = f"{column}_flagged"
     if flag_col not in df.columns:
         flag_col = "_flagged"
@@ -377,7 +387,16 @@ def _validate_flag_extreme_outliers(
     # left to flag — that's a pass, not a failure.
     if not has_flag and column in df.columns:
         numeric = pd.to_numeric(df[column], errors="coerce").dropna()
-        if len(numeric) < 4:
+        if not policy.enabled:
+            return StepVerification(
+                step_index=-1,
+                operation="flag_extreme_outliers",
+                column=column,
+                passed=True,
+                expected="Outlier handling disabled in settings",
+                actual="Step correctly made no changes",
+            )
+        if len(numeric) < MIN_CLEANING_VALUES:
             # Too few values to detect outliers — nothing to flag
             return StepVerification(
                 step_index=-1,
@@ -387,14 +406,7 @@ def _validate_flag_extreme_outliers(
                 expected="No outliers to flag (too few values)",
                 actual="No outliers detected",
             )
-        median_val = numeric.median()
-        mad = (numeric - median_val).abs().median()
-        if mad == 0:
-            upper = numeric.quantile(0.99)
-            has_outliers = (numeric > upper).any()
-        else:
-            modified_z = 0.6745 * (numeric - median_val).abs() / mad
-            has_outliers = (modified_z > 3.5).any()
+        has_outliers = bool(policy.outlier_mask(df[column], policy.threshold_for(params)).any())
         if not has_outliers:
             return StepVerification(
                 step_index=-1,
@@ -636,11 +648,15 @@ def verify_cleaning_result(
     audit_log: list[dict[str, Any]],
     original_quality_flags: dict[str, Any],
     failed_steps: list[dict[str, Any]] | None = None,
+    policy: OutlierPolicy | None = None,
 ) -> VerificationReport:
     """Run the full deterministic verification cycle.
 
     Compares before/after quality flags, validates each step's postcondition,
     and computes audit log completeness. Pure function — no side effects.
+
+    Pass the same *policy* the cleaning run used, or outlier steps get judged
+    against a cutoff they were never asked to meet.
     """
     from app.tasks.profile_task import detect_quality_issues
 
@@ -685,6 +701,8 @@ def verify_cleaning_result(
             result = _validate_drop_rows(
                 cleaned_df, column, params, original_row_count=original_row_count
             )
+        elif operation == "flag_extreme_outliers":
+            result = _validate_flag_extreme_outliers(cleaned_df, column, params, policy=policy)
         else:
             result = validator(cleaned_df, column, params)
 

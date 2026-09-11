@@ -16,6 +16,7 @@ from app.models.cleaning_recipe import CleaningRecipe
 from app.models.dataset import Dataset
 from app.models.job import Job
 from app.schemas import CleaningRecipeResponse, CleaningStep
+from app.services.outliers import OutlierPolicy
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["recipes"])
@@ -215,7 +216,12 @@ async def apply_recipe(
     try:
         from app.tasks.cleaning_task import clean_dataset
 
-        task = clean_dataset.delay(str(dataset.id), str(job.id), json.dumps(steps))
+        task = clean_dataset.delay(
+            str(dataset.id),
+            str(job.id),
+            json.dumps(steps),
+            json.dumps(OutlierPolicy.from_preferences(user.preferences).to_dict()),
+        )
         job.celery_task_id = task.id
         await db.commit()
     except Exception as exc:

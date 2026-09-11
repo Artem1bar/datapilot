@@ -16,6 +16,7 @@ import { progressStageLabel } from "@/lib/progress";
 import { toMethodsCard, type AnalysisTurn } from "@/lib/analysis-methods";
 import { toResultsCard } from "@/lib/analysis-results";
 import { validateUploadFile } from "@/lib/upload";
+import { getSettings } from "@/lib/settings-api";
 import type {
   ActiveCleaningJob,
   DatasetResponse,
@@ -34,6 +35,28 @@ import type {
 
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+/** Column names from a dataset profile, for the review card's column pickers. */
+function profileColumns(dataset: DatasetResponse): string[] {
+  const profile = dataset.profile_json as Record<string, unknown> | null;
+  const columns = profile?.columns as Record<string, unknown> | undefined;
+  return columns ? Object.keys(columns) : [];
+}
+
+/**
+ * Whether the user wants to review a plan before it runs.
+ *
+ * On by default, and on if the setting cannot be read — a failure to load a
+ * preference must not silently start changing someone's data.
+ */
+async function reviewRequired(): Promise<boolean> {
+  try {
+    const prefs = await getSettings();
+    return prefs.review_first !== false;
+  } catch {
+    return true;
+  }
 }
 
 // Job ids currently being watched by a poll loop. Module-level so a remount
@@ -298,6 +321,7 @@ export default function Chat() {
         const previewCard: ManipulationPreviewPayload = {
           type: "manipulation_preview",
           command: text,
+          datasetId,
           operations: preview.operations.map((op) => ({
             opType: op.op_type,
             params: op.params,
@@ -499,6 +523,8 @@ export default function Chat() {
         );
       }
 
+      const mustReview = await reviewRequired();
+
       const planCard: CleaningPlanPayload = {
         type: "cleaning_plan",
         summary:
@@ -506,13 +532,30 @@ export default function Chat() {
           `AI-generated cleaning plan with ${planData.steps.length} steps`,
         datasetId,
         steps: planData.steps,
+        columns: profileColumns(dataset),
+        applied: !mustReview,
       };
 
       addMessage(sessionId, createMessage("assistant", "", planCard));
       setWorkflowStep(sessionId, "plan", "complete");
-      // The workflow pauses here for user approval. The plan card lets the user
-      // toggle steps and press "Apply", which dispatches the "apply_cleaning"
-      // card action → applyCleaningSteps(). Nothing is applied automatically.
+
+      if (!mustReview) {
+        // The user turned "Review plans before applying" off in Settings, so
+        // the plan runs as generated. The card above is still added as the
+        // record of what ran, in its already-applied state.
+        addMessage(
+          sessionId,
+          createMessage(
+            "system",
+            "Applying this plan without review — *Review plans before applying* is off in Settings.",
+          ),
+        );
+        await applyCleaningSteps(sessionId, datasetId, planData.steps);
+        return;
+      }
+      // Otherwise the workflow pauses here for approval. The plan card lets the
+      // user edit steps and press "Apply", which dispatches the
+      // "apply_cleaning" card action → applyCleaningSteps().
     } catch (err) {
       addMessage(
         sessionId,
@@ -540,6 +583,7 @@ export default function Chat() {
     sessionId: string,
     datasetId: string,
     steps: CleaningStep[],
+    recipeId?: string,
   ) {
     setSending(true);
 
@@ -568,7 +612,7 @@ export default function Chat() {
 
       const applyJob = await api
         .post(`cleaning/${datasetId}/apply`, {
-          json: { steps },
+          json: recipeId ? { steps, recipe_id: recipeId } : { steps },
           timeout: 180_000,
         })
         .json<JobResponse>();
@@ -607,9 +651,16 @@ export default function Chat() {
     }
   }
 
-  // Applies a saved recipe to the active session's dataset. The backend
-  // validates the steps against the dataset's columns (422 with the issues
-  // named), dispatches a clean job, and the shared watcher takes over.
+  // Puts a saved recipe up for review against the active session's dataset.
+  //
+  // A recipe was written against a *different* file, so applying it unseen is
+  // the riskiest path in the app: a column that has since been renamed makes a
+  // step a silent no-op, and a threshold that suited last quarter's numbers may
+  // not suit this file's. So the recipe's steps are loaded into the same review
+  // card the planner's output goes through, where they can be retargeted and
+  // retyped before anything runs. Applying goes out through
+  // cleaning/{id}/apply carrying the recipe id, so the job still records which
+  // recipe it came from.
   async function applyRecipe(recipeId: string) {
     const sessionId = activeSessionId;
     if (!sessionId) return;
@@ -621,56 +672,61 @@ export default function Chat() {
 
     setSending(true);
     try {
-      const [dataset, recipe] = await Promise.all([
+      const [dataset, recipe, mustReview] = await Promise.all([
         api.get(`datasets/${datasetId}`).json<DatasetResponse>(),
         api.get(`recipes/${recipeId}`).json<{
           name: string;
           steps_json: { steps?: CleaningStep[] };
         }>(),
+        reviewRequired(),
       ]);
 
+      const steps = recipe.steps_json.steps ?? [];
+      if (steps.length === 0) {
+        addMessage(
+          sessionId,
+          createMessage(
+            "assistant",
+            `Recipe **${recipe.name}** has no steps in it, so there is nothing to apply.`,
+          ),
+        );
+        return;
+      }
+
       startWorkflow(sessionId, datasetId, dataset.filename);
-      setWorkflowStep(sessionId, "clean", "active");
+      setWorkflowStep(sessionId, "inspect", "complete");
+      setWorkflowStep(sessionId, "plan", "complete");
 
-      const progressMsgId = generateId();
-      addMessage(sessionId, {
-        id: progressMsgId,
-        role: "assistant",
-        content: "",
-        card: {
-          type: "cleaning_progress",
-          progress: 0,
-          status: "running",
-          message: `Applying recipe "${recipe.name}"...`,
-        },
-        timestamp: new Date().toISOString(),
-      });
-
-      const resp = await api
-        .post(`recipes/${recipeId}/apply`, {
-          json: { dataset_id: datasetId },
-          timeout: 60_000,
-        })
-        .json<{ job_id: string; recipe_name: string; step_count: number }>();
-
-      const activeJob: ActiveCleaningJob = {
-        jobId: resp.job_id,
+      const planCard: CleaningPlanPayload = {
+        type: "cleaning_plan",
+        summary: `Saved recipe "${recipe.name}" — ${steps.length} step${
+          steps.length !== 1 ? "s" : ""
+        }, written against another dataset. Check the columns and values still apply here.`,
         datasetId,
-        datasetFilename: dataset.filename,
-        progressMessageId: progressMsgId,
-        rowsBefore: dataset.row_count ?? 0,
-        steps: recipe.steps_json.steps ?? [],
-        startedAt: new Date().toISOString(),
+        steps,
+        columns: profileColumns(dataset),
+        recipeId,
+        recipeName: recipe.name,
+        applied: !mustReview,
       };
-      useSessionStore.getState().registerCleaningJob(sessionId, activeJob);
+      addMessage(sessionId, createMessage("assistant", "", planCard));
 
-      await watchCleaningJob(sessionId, activeJob);
+      if (!mustReview) {
+        addMessage(
+          sessionId,
+          createMessage(
+            "system",
+            "Applying this recipe without review — *Review plans before applying* is off in Settings.",
+          ),
+        );
+        await applyCleaningSteps(sessionId, datasetId, steps, recipeId);
+      }
     } catch (err) {
       addMessage(
         sessionId,
         createMessage("assistant", "", {
           type: "error",
-          title: "Couldn't apply the recipe",
+          title: "Couldn't open the recipe",
           message: err instanceof Error ? err.message : "Unknown error",
           retry: {
             action: "apply_recipe",
@@ -831,10 +887,11 @@ export default function Chat() {
       if (action === "apply_cleaning" && data) {
         const sessionId = ownerSessionId ?? activeSessionId;
         if (!sessionId) return;
-        const { datasetId, steps, messageId } = data as {
+        const { datasetId, steps, messageId, recipeId } = data as {
           datasetId?: string;
           steps?: CleaningStep[];
           messageId?: string;
+          recipeId?: string;
         };
         if (!datasetId || !steps?.length) return;
         // Persist the applied state on the plan message so the card stays
@@ -850,7 +907,7 @@ export default function Chat() {
             });
           }
         }
-        await applyCleaningSteps(sessionId, datasetId, steps);
+        await applyCleaningSteps(sessionId, datasetId, steps, recipeId);
       }
 
       if (action === "retry_clean_plan" && data) {

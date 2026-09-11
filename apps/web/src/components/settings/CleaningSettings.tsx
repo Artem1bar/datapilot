@@ -146,7 +146,10 @@ export function CleaningSettings() {
         />
       </Field>
 
-      <Field label="Outlier method">
+      <Field
+        label="Outlier method"
+        description="How extreme values are judged. None leaves them untouched."
+      >
         <Choice
           value={prefs.outlier_method}
           onChange={(v) => set("outlier_method", v)}
@@ -158,18 +161,29 @@ export function CleaningSettings() {
         />
       </Field>
 
-      <Field label="Outlier threshold" description="Higher = more forgiving.">
+      <Field
+        label="Outlier threshold"
+        description={
+          prefs.outlier_method === "iqr"
+            ? "IQR multiplier. Higher = more forgiving."
+            : "MAD z-score cutoff. Higher = more forgiving."
+        }
+      >
         <Input
           type="number"
           step="0.1"
           min={0}
           max={100}
+          disabled={prefs.outlier_method === "none"}
           value={prefs.outlier_threshold}
           onChange={(e) => set("outlier_threshold", Number(e.target.value))}
         />
       </Field>
 
-      <Field label="Review plans before applying" description="Off = auto-apply generated plans.">
+      <Field
+        label="Review plans before applying"
+        description="On, every cleaning plan and saved recipe waits for you to approve or edit it. Off, they run as generated."
+      >
         <div className="flex justify-end">
           <Switch checked={prefs.review_first} onCheckedChange={(v) => set("review_first", v)} />
         </div>

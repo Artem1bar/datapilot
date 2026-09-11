@@ -95,6 +95,35 @@ async def parse_command(
     return ManipulationPreview(**preview)
 
 
+@router.post("/{dataset_id}/preview", response_model=ManipulationPreview)
+async def preview_operations(
+    dataset_id: uuid.UUID,
+    body: ManipulationApplyRequest,
+    user: CurrentUser,
+    db: DBSession,
+) -> ManipulationPreview:
+    """Preview a chosen subset of already-parsed operations.
+
+    ``parse`` previews everything the AI proposed. Once a person can exclude one
+    of those operations, that preview no longer describes what would happen — so
+    the review card asks for a fresh one covering exactly what is still
+    selected. No AI call and no rate limit: this only re-runs the operations
+    against a copy of the data.
+    """
+    dataset = await _get_dataset_or_404(dataset_id, user.id, db)
+
+    file_bytes = await asyncio.to_thread(download_file_bytes, dataset.r2_key)
+    df = await asyncio.to_thread(read_dataframe, file_bytes, dataset.filename)
+    operations = [op.model_dump() for op in body.operations]
+
+    try:
+        preview = await asyncio.to_thread(generate_preview, df, operations)
+    except ManipulationError as e:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
+
+    return ManipulationPreview(**preview)
+
+
 @router.post("/{dataset_id}/apply", response_model=ManipulationResult)
 async def apply_operations(
     dataset_id: uuid.UUID,

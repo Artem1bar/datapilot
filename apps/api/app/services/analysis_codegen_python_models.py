@@ -487,6 +487,60 @@ SURVEY_ESTIMATE = register_helper(
     requires=(SURVEY_VARIANCE, SURVEY_DOF),
 )
 
+SURVEY_QUANTILE = register_helper(
+    "survey_quantile",
+    '''def survey_quantile(design, values, p, domain=None, level=__LEVEL__):
+    """A weighted quantile, with a Woodruff (1952) confidence interval.
+
+    The quantile is the lower inverse of the weighted CDF
+    F(x) = sum_i w_i [y_i <= x] / sum_i w_i: the smallest observed value whose
+    F reaches p. It is always a value that occurs in the data.
+
+    A quantile is a step function of the data, not a smooth function of totals,
+    so the Taylor linearization used for a mean does not give its variance.
+    Woodruff's method builds the interval on the CDF instead — at the estimate,
+    [y_i <= Q] is an indicator whose weighted mean IS an ordinary ratio
+    estimator — and reads both endpoints back through the CDF.
+
+    Two consequences: the interval is not symmetric about the estimate, so
+    value +/- SE will not reproduce it; and the standard error is derived FROM
+    the interval width rather than the other way round.
+    """
+    def invert(sorted_values, cumulative, probability):
+        target = probability * float(cumulative[-1])
+        index = int(np.searchsorted(cumulative, target, side="left"))
+        return float(sorted_values[min(index, sorted_values.size - 1)])
+
+    indicator = np.ones(values.size) if domain is None else np.asarray(domain, dtype=float)
+    inside = indicator > 0
+    inside_values = values[inside]
+    order = np.argsort(inside_values, kind="stable")
+    ordered = inside_values[order]
+    cumulative = np.cumsum(design["weights"][inside][order])
+
+    quantile = invert(ordered, cumulative, p)
+    achieved = survey_estimate(design, (values <= quantile).astype(float), indicator)
+    dof = survey_dof(design)
+    t_value = float(stats.t.ppf(1 - (1 - level) / 2, dof))
+    margin = t_value * achieved["standard_error"]
+    # A tail that runs past the end of the distribution stops at the end of it.
+    ci_low = invert(ordered, cumulative, min(max(p - margin, 1e-12), 1.0))
+    ci_high = invert(ordered, cumulative, min(max(p + margin, 1e-12), 1.0))
+    standard_error = (ci_high - ci_low) / (2 * t_value)
+    return {
+        "value": quantile,
+        "standard_error": standard_error,
+        "ci_low": ci_low,
+        "ci_high": ci_high,
+        "dof": dof,
+        "n": int(inside.sum()),
+        "sum_weights": float((design["weights"] * indicator).sum()),
+        "unweighted": float(np.quantile(inside_values, p, method="inverted_cdf")),
+        "relative_se": abs(standard_error / quantile) if quantile != 0 else float("nan"),
+    }''',
+    requires=(SURVEY_ESTIMATE, SURVEY_DOF),
+)
+
 SURVEY_DEFF = register_helper(
     "survey_design_effect",
     '''def survey_design_effect(design, values, domain=None):
@@ -558,7 +612,11 @@ ESTIMATE_ROW = register_helper(
     Column order is load-bearing: the product plots the second column, so a
     sample size there would put group sizes under a title promising means.
     """
-    unweighted_key = "unweighted_mean" if value_key == "weighted_mean" else "unweighted_sum"
+    unweighted_key = {
+        "weighted_mean": "unweighted_mean",
+        "weighted_total": "unweighted_sum",
+        "weighted_quantile": "unweighted_quantile",
+    }[value_key]
     return {
         "label": label,
         value_key: estimate["value"],
@@ -1455,6 +1513,59 @@ def _emit_weighted_mean(params: dict[str, Any], label: str, index: int) -> Lines
         "# number; it is a different quantity — the people who answered rather than",
         "# the population they were sampled to represent. Both are reported.",
         *_grouped_estimate(params, label, index, of_total=False),
+    ]
+
+
+@register(
+    "weighted_quantile",
+    SURVEY_DATA,
+    SURVEY_ESTIMATE,
+    SURVEY_QUANTILE,
+    SURVEY_DOMAINS,
+    ESTIMATE_ROW,
+)
+def _emit_weighted_quantile(params: dict[str, Any], label: str, index: int) -> Lines:
+    column = params["column"]
+    group_by = list(params.get("group_by") or [])
+    p = float(params.get("quantile", 0.5))
+    return [
+        "# A median cannot be read off a weighted mean, and an ordinary median",
+        "# ignores the weights entirely. This is the quantile of the weighted",
+        "# distribution, with a Woodruff interval — see survey_quantile.",
+        *_survey_lines(params, index, numeric=[column], labels=group_by),
+        f"values_{index} = frame_{index}[{py_literal(column)}].to_numpy(dtype=float)",
+        f"estimates_{index} = {{",
+        f"    name: survey_quantile(design_{index}, values_{index}, {py_literal(p)}, indicator)",
+        f"    for name, indicator in survey_domains(frame_{index}, {py_literal(group_by)})",
+        "}",
+        f"result_{index} = pd.DataFrame([",
+        "    estimate_row(name, estimate, 'weighted_quantile')",
+        f"    for name, estimate in estimates_{index}.items()",
+        f"]).rename(columns={{'label': {py_literal(_group_column(params))}}})",
+        f"stats_{index} = {{",
+        f"    'n': int(len(frame_{index})),",
+        f"    'quantile': {py_literal(p)},",
+        f"    'degrees_of_freedom': survey_dof(design_{index}),",
+        "    # How far weighting moved the mean, in standard deviations — the same",
+        "    # effect size every operation in this tier reports.",
+        "    'effect_size': float(",
+        f"        (float((design_{index}['weights'] * values_{index}).sum()"
+        f" / design_{index}['weights'].sum())",
+        f"         - float(values_{index}.mean())) / float(values_{index}.std(ddof=1))",
+        "    ),",
+        "}",
+        f"if len(estimates_{index}) == 1:",
+        f"    only_{index} = estimates_{index}['(all respondents)']",
+        f"    stats_{index}.update({{",
+        f"        'weighted_quantile': only_{index}['value'],",
+        f"        'unweighted_quantile': only_{index}['unweighted'],",
+        f"        'standard_error': only_{index}['standard_error'],",
+        f"        'ci95_low': only_{index}['ci_low'],",
+        f"        'ci95_high': only_{index}['ci_high'],",
+        f"        'relative_standard_error': only_{index}['relative_se'],",
+        f"        'sum_of_weights': only_{index}['sum_weights'],",
+        "    })",
+        f"show({py_literal(label)}, result_{index}, stats_{index})",
     ]
 
 
