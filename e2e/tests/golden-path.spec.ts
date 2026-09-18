@@ -51,11 +51,11 @@ test("golden path: upload → plan → edit → apply → validate → results �
   const originalColumn = await columnField.inputValue();
   await columnField.selectOption({ index: 2 });
   await expect(columnField).not.toHaveValue(originalColumn);
-  await expect(page.getByText("edited")).toBeVisible();
+  await expect(page.getByText("edited", { exact: true })).toBeVisible();
 
   // Reset puts the plan back to what was proposed.
   await page.getByRole("button", { name: /^Reset$/ }).click();
-  await expect(page.getByText("edited")).toBeHidden();
+  await expect(page.getByText("edited", { exact: true })).toBeHidden();
   await expect(page.getByText("2 of 2 selected")).toBeVisible();
 
   // ── Apply ──
