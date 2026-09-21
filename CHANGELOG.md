@@ -12,6 +12,19 @@ Format loosely follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   the app is self-hosted only (`docker compose`). The README no longer links a
   live URL.
 
+### CI (2026-09-18)
+
+- **Fixed**: use `quay.io/minio/minio` and `quay.io/minio/mc` in CI — Docker Hub was returning access-denied for `minio/minio` and `minio/mc`.
+- **Fixed**: set `POSTGRES_DB: test` so `pg_isready` health check finds the database (the service was using a different DB name than the check expected).
+- **Fixed**: E2E — use exact match for the `edited` badge label to avoid Playwright strict mode violation when multiple elements match a partial selector.
+
+### Outlier detection, cleaning catalog, and plan review (2026-09-11)
+
+- **Outlier detection** — IQR and z-score policies with configurable thresholds per column; outliers surfaced in the dataset profile; can be capped, removed, or flagged as a cleaning step.
+- **Cleaning catalog** — typed operation library with parameter specs and validation; every cleaning step checked against the catalog before execution, catching invalid parameter combinations before they reach the pipeline.
+- **Plan review with blocking validation** — cleaning plan card shows inline step editors; required parameters that are missing block Apply and name exactly what is needed.
+- **Tests**: `test_outlier_detection.py`, `test_outlier_policy.py`, `test_outlier_thresholds.py`, `test_cleaning_catalog.py`, `test_plan_review_endpoints.py` added; backend total up to 1,964 tests.
+
 ### Live deployment: an honest failure until the API is hosted
 
 - The Vercel deployment is the static frontend only. With `VITE_API_URL`
